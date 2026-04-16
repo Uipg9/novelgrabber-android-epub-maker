@@ -91,6 +91,14 @@ WebExtension/
 └── README.md
 ```
 
+## Android App (APK)
+
+This repository now includes an Android wrapper project at `android-app/`.
+
+- It packages the existing `src/ui` app inside a native WebView.
+- It supports saving generated EPUB files directly on Android.
+- Build instructions are in `android-app/README.md`.
+
 ## How Font Encryption Works
 
 ChrysanthemumGarden uses custom web fonts to encrypt text:
