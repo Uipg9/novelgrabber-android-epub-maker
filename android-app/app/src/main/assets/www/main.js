@@ -370,6 +370,8 @@ const els = {
     progressBar: document.getElementById('progress-bar'),
     progressText: document.getElementById('progress-text'),
     progressLog: document.getElementById('progress-log'),
+    btnCopyLog: document.getElementById('btn-copy-log'),
+    btnExportLog: document.getElementById('btn-export-log'),
     btnDecryptEpub: document.getElementById('btn-decrypt-epub'),
     epubFileInput: document.getElementById('epub-file-input')
 };
@@ -436,9 +438,12 @@ async function init() {
     }
     
     // Copy Log button
-    const btnCopyLog = document.getElementById('btn-copy-log');
-    if (btnCopyLog) {
-        btnCopyLog.addEventListener('click', copyLogToClipboard);
+    if (els.btnCopyLog) {
+        els.btnCopyLog.addEventListener('click', copyLogToClipboard);
+    }
+
+    if (els.btnExportLog) {
+        els.btnExportLog.addEventListener('click', exportLogsToFile);
     }
 }
 
@@ -828,10 +833,10 @@ function log(message, type = '') {
 
 // Copy all log history to clipboard
 function copyLogToClipboard() {
-    const logText = logHistory.join('\n');
+    const logText = getLogText();
     navigator.clipboard.writeText(logText).then(() => {
         // Show brief feedback
-        const btn = document.getElementById('btn-copy-log');
+        const btn = els.btnCopyLog;
         if (btn) {
             const originalText = btn.textContent;
             btn.textContent = '✓ Copied!';
@@ -845,6 +850,40 @@ function copyLogToClipboard() {
         console.error('Failed to copy log:', err);
         alert('Failed to copy log to clipboard');
     });
+}
+
+function getLogText() {
+    const lines = logHistory.length > 0 ? logHistory : ['No logs available'];
+    return [
+        'NovelGrabber Log Export',
+        `Generated: ${new Date().toISOString()}`,
+        '',
+        ...lines
+    ].join('\n');
+}
+
+async function exportLogsToFile() {
+    try {
+        const logText = getLogText();
+        const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' });
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `novelgrabber-log-${timestamp}.txt`;
+        await downloadBlob(blob, filename);
+
+        const btn = els.btnExportLog;
+        if (btn) {
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Exported!';
+            btn.style.background = '#2563eb';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 2000);
+        }
+    } catch (err) {
+        console.error('Failed to export logs:', err);
+        alert('Failed to export logs');
+    }
 }
 
 // ============ LOG HISTORY FOR COPY BUTTON ============

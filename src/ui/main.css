@@ -202,6 +202,10 @@ body {
     .supported-sites {
         font-size: 0.66rem;
     }
+
+    .log-actions {
+        flex-direction: column;
+    }
 }
 
 .panel {
@@ -557,6 +561,18 @@ body {
 
 .progress-log .log-entry.error {
     color: var(--error);
+}
+
+.log-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+}
+
+.log-actions .btn {
+    flex: 1;
+    font-size: 0.78rem;
+    padding: 8px 10px;
 }
 
 /* Footer */
