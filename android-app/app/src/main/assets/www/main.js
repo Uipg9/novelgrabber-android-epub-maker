@@ -350,6 +350,10 @@ const els = {
     coverUrl: document.getElementById('cover-url'),
     turboMode: document.getElementById('turbo-mode'),
     safeMode: document.getElementById('safe-mode'),
+    dryRun: document.getElementById('dry-run'),
+    diagnosticsMode: document.getElementById('diagnostics-mode'),
+    backgroundMode: document.getElementById('background-mode'),
+    imageMode: document.getElementById('image-mode'),
     batchSize: document.getElementById('batch-size'),
     timeoutSeconds: document.getElementById('timeout-seconds'),
     delay: document.getElementById('delay'),
@@ -366,12 +370,17 @@ const els = {
     btnSelectAll: document.getElementById('btn-select-all'),
     btnSelectNone: document.getElementById('btn-select-none'),
     btnCreate: document.getElementById('btn-create'),
+    btnRetryFailed: document.getElementById('btn-retry-failed'),
     btnCancel: document.getElementById('btn-cancel'),
     progressBar: document.getElementById('progress-bar'),
     progressText: document.getElementById('progress-text'),
+    etaText: document.getElementById('eta-text'),
     progressLog: document.getElementById('progress-log'),
     btnCopyLog: document.getElementById('btn-copy-log'),
     btnExportLog: document.getElementById('btn-export-log'),
+    donationAmount: document.getElementById('donation-amount'),
+    btnDonationCheckout: document.getElementById('btn-donation-checkout'),
+    paypalDonationContainer: document.getElementById('paypal-donation-container'),
     btnDecryptEpub: document.getElementById('btn-decrypt-epub'),
     epubFileInput: document.getElementById('epub-file-input')
 };
@@ -382,7 +391,11 @@ let state = {
     chapters: [],
     isRunning: false,
     cancelled: false,
-    currentSite: null
+    currentSite: null,
+    lastFailedChapters: [],
+    lastRunSummary: null,
+    wakeLock: null,
+    diagnosticsEnabled: false
 };
 
 // ============ INITIALIZATION ============
@@ -407,6 +420,9 @@ async function init() {
     els.btnSelectAll.addEventListener('click', () => selectChapters(true));
     els.btnSelectNone.addEventListener('click', () => selectChapters(false));
     els.btnCreate.addEventListener('click', createEpub);
+    if (els.btnRetryFailed) {
+        els.btnRetryFailed.addEventListener('click', retryFailedChapters);
+    }
     els.btnCancel.addEventListener('click', cancelCreation);
     
     // Chapter range filtering - auto-select chapters in range when inputs change
@@ -445,6 +461,22 @@ async function init() {
     if (els.btnExportLog) {
         els.btnExportLog.addEventListener('click', exportLogsToFile);
     }
+
+    if (els.backgroundMode) {
+        els.backgroundMode.addEventListener('change', async () => {
+            if (els.backgroundMode.checked) {
+                await requestNotificationPermission();
+            } else {
+                await releaseWakeLock();
+            }
+        });
+    }
+
+    if (els.btnDonationCheckout) {
+        els.btnDonationCheckout.addEventListener('click', renderDonationCheckout);
+    }
+
+    initializePayPalIfPresent();
 }
 
 // Get site config based on URL
@@ -652,7 +684,8 @@ function extractChapterList(doc, baseUrl, config) {
         let href = link.href || link.getAttribute('href') || link.value;
         if (!href) continue;
         
-        const title = (link.textContent || link.innerText || '').trim().replace(/\s+/g, ' ');
+        const rawTitle = (link.textContent || link.innerText || '').trim().replace(/\s+/g, ' ');
+        const title = normalizeChapterTitle(rawTitle, chapters.length + 1);
         
         // Make absolute URL
         if (href.startsWith('/')) {
@@ -677,6 +710,7 @@ function extractChapterList(doc, baseUrl, config) {
         chapters.push({
             title: title,
             url: href,
+            titleKey: normalizeTitleKey(title),
             selected: true
         });
     }
@@ -690,6 +724,25 @@ function extractChapterList(doc, baseUrl, config) {
 
     // Re-index after sorting
     chapters.forEach((ch, i) => ch.index = i);
+
+    // Detect likely duplicates and let user decide whether to remove them.
+    const duplicates = findDuplicateChapters(chapters);
+    if (duplicates.length > 0) {
+        const preview = duplicates.slice(0, 8).map(d => `- #${d.index + 1} ${d.title}`).join('\n');
+        const shouldRemove = window.confirm(
+            `Found ${duplicates.length} potential duplicate chapter(s).\n\n${preview}\n\nRemove these duplicates?`
+        );
+        if (shouldRemove) {
+            const duplicateIndexSet = new Set(duplicates.map(d => d.index));
+            const filtered = chapters.filter((_, i) => !duplicateIndexSet.has(i));
+            filtered.forEach(ch => delete ch.titleKey);
+            filtered.forEach((ch, i) => ch.index = i);
+            return filtered;
+        }
+    }
+
+    // Remove helper key used for duplicate checking.
+    chapters.forEach(ch => delete ch.titleKey);
 
     return chapters;
 }
@@ -715,6 +768,53 @@ function extractChapterNumber(title, url) {
     }
     
     return 999999; // Unknown chapters go to end
+}
+
+function normalizeChapterTitle(title, fallbackIndex) {
+    let clean = (title || '').replace(/\s+/g, ' ').trim();
+    clean = clean.replace(/[‐‑‒–—]+/g, '-').replace(/\s*-\s*/g, ' - ');
+
+    if (!clean) {
+        return `Chapter ${fallbackIndex}`;
+    }
+
+    return clean;
+}
+
+function normalizeTitleKey(title) {
+    return String(title || '')
+        .toLowerCase()
+        .replace(/chapter|ch\.?/g, '')
+        .replace(/[^a-z0-9]+/g, '')
+        .trim();
+}
+
+function findDuplicateChapters(chapters) {
+    const seenTitleKeys = new Map();
+    const seenUrls = new Set();
+    const duplicates = [];
+
+    chapters.forEach((chapter, index) => {
+        const titleKey = chapter.titleKey || normalizeTitleKey(chapter.title);
+        const url = chapter.url;
+
+        if (seenUrls.has(url)) {
+            duplicates.push({ index, title: chapter.title, reason: 'url' });
+            return;
+        }
+
+        if (titleKey && seenTitleKeys.has(titleKey)) {
+            duplicates.push({ index, title: chapter.title, reason: 'title' });
+            return;
+        }
+
+        seenUrls.add(url);
+        if (titleKey) {
+            seenTitleKeys.set(titleKey, index);
+        }
+    });
+
+    return duplicates;
 }
 
 // ============ DISPLAY ============
@@ -884,6 +984,117 @@ async function exportLogsToFile() {
         console.error('Failed to export logs:', err);
         alert('Failed to export logs');
     }
+}
+
+function formatDuration(seconds) {
+    const s = Math.max(0, Math.round(seconds));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}h ${m}m ${sec}s`;
+    if (m > 0) return `${m}m ${sec}s`;
+    return `${sec}s`;
+}
+
+async function requestNotificationPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+        try {
+            await Notification.requestPermission();
+        } catch (e) {
+            console.warn('Notification permission request failed:', e);
+        }
+    }
+}
+
+async function notifyUser(title, body) {
+    if (!els.backgroundMode?.checked) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    try {
+        new Notification(title, { body });
+    } catch (e) {
+        console.warn('Notification failed:', e);
+    }
+}
+
+async function acquireWakeLock() {
+    if (!els.backgroundMode?.checked) return;
+    if (!('wakeLock' in navigator)) return;
+    if (state.wakeLock) return;
+
+    try {
+        state.wakeLock = await navigator.wakeLock.request('screen');
+        state.wakeLock.addEventListener('release', () => {
+            state.wakeLock = null;
+        });
+        log('🔋 Wake lock enabled to reduce interruptions');
+    } catch (e) {
+        console.warn('Wake lock request failed:', e);
+    }
+}
+
+async function releaseWakeLock() {
+    if (!state.wakeLock) return;
+    try {
+        await state.wakeLock.release();
+    } catch (e) {
+        console.warn('Wake lock release failed:', e);
+    } finally {
+        state.wakeLock = null;
+    }
+}
+
+function initializePayPalIfPresent() {
+    if (!window.paypal || !els.paypalDonationContainer) return;
+    // Render on demand when user enters amount and clicks checkout.
+}
+
+function renderDonationCheckout() {
+    const amount = parseFloat(els.donationAmount?.value || '0');
+    if (!Number.isFinite(amount) || amount <= 0) {
+        alert('Please enter a valid donation amount.');
+        return;
+    }
+
+    if (!window.paypal || !els.paypalDonationContainer) {
+        alert('PayPal checkout is not available in this environment.');
+        return;
+    }
+
+    const container = els.paypalDonationContainer;
+    container.classList.remove('hidden');
+    container.innerHTML = '';
+
+    window.paypal.Buttons({
+        style: {
+            layout: 'vertical',
+            color: 'gold',
+            shape: 'rect',
+            label: 'paypal'
+        },
+        createOrder: (_, actions) => {
+            return actions.order.create({
+                purchase_units: [{
+                    amount: {
+                        currency_code: 'USD',
+                        value: amount.toFixed(2)
+                    },
+                    description: 'Support donation for NovelGrabber'
+                }]
+            });
+        },
+        onApprove: async (_, actions) => {
+            await actions.order.capture();
+            log(`💙 Donation completed: $${amount.toFixed(2)}`, 'success');
+            alert('Thank you for supporting development!');
+        },
+        onError: (err) => {
+            console.error('PayPal checkout error:', err);
+            log(`PayPal checkout error: ${err?.message || 'Unknown error'}`, 'error');
+            alert('PayPal checkout failed. Please try again.');
+        }
+    }).render(container);
 }
 
 // ============ LOG HISTORY FOR COPY BUTTON ============
@@ -2826,8 +3037,8 @@ function extractRenderedContentWithDecrypt(contentSelectors, cipherData, removeN
 }
 
 // ============ CREATE EPUB ============
-async function createEpub() {
-    const selectedChapters = state.chapters.filter(ch => ch.selected);
+async function createEpub(overrideChapters = null) {
+    const selectedChapters = overrideChapters || state.chapters.filter(ch => ch.selected);
     if (selectedChapters.length === 0) {
         showStatus('Please select at least one chapter', 'error');
         return;
@@ -2836,6 +3047,7 @@ async function createEpub() {
     state.isRunning = true;
     state.cancelled = false;
     els.btnCreate.classList.add('hidden');
+    if (els.btnRetryFailed) els.btnRetryFailed.classList.add('hidden');
     els.btnCancel.classList.remove('hidden');
     els.progressLog.innerHTML = '';
     logHistory.length = 0;  // Clear log history
@@ -2847,9 +3059,16 @@ async function createEpub() {
     const password = els.password?.value?.trim() || '';
     const turboMode = els.turboMode?.checked ?? false;
     const safeMode = els.safeMode?.checked ?? false;
+    const dryRun = els.dryRun?.checked ?? false;
+    const diagnosticsMode = els.diagnosticsMode?.checked ?? false;
+    const backgroundMode = els.backgroundMode?.checked ?? false;
+    const includeImages = els.includeImages?.checked ?? true;
+    let imageMode = els.imageMode?.value || 'original';
+    if (!includeImages) imageMode = 'remove';
     const customBatchSize = parseInt(els.batchSize?.value) || 5;
     const timeoutSeconds = parseInt(els.timeoutSeconds?.value) || 60;
     const timeoutMs = timeoutSeconds * 1000;
+    state.diagnosticsEnabled = diagnosticsMode;
 
     log(`Starting EPUB creation for ${selectedChapters.length} chapters`);
     if (config.hasEncryption) {
@@ -2860,6 +3079,25 @@ async function createEpub() {
     }
     if (password) {
         log(`Password provided for locked chapters`);
+    }
+    if (dryRun) {
+        const preview = selectedChapters.slice(0, 8).map(ch => `- ${ch.title}`).join('\n');
+        log('🧪 Dry run enabled: no chapter downloads or EPUB build will occur.', 'success');
+        log(`Would process ${selectedChapters.length} chapters.`, 'success');
+        if (preview) {
+            log(`Preview:\n${preview}`);
+        }
+        updateProgress(100, 'Dry run complete');
+        if (els.etaText) els.etaText.textContent = 'ETA: 0s';
+        state.isRunning = false;
+        els.btnCreate.classList.remove('hidden');
+        els.btnCancel.classList.add('hidden');
+        return;
+    }
+
+    if (backgroundMode) {
+        await requestNotificationPermission();
+        await acquireWakeLock();
     }
     
     // ============ SAFE MODE / AUTO-SEQUENTIAL ============
@@ -2887,8 +3125,13 @@ async function createEpub() {
     rateLimiter.lastRequestTime = 0;
     
     updateProgress(0, 'Starting...');
+    if (els.etaText) els.etaText.textContent = 'ETA: calculating...';
 
     const collectedChapters = [];
+    const failedChapters = [];
+    let processedCount = 0;
+    let successCount = 0;
+    let failureCount = 0;
     
     // Use fast fetch for encrypted sites (CG) - handles passwords via fetch too!
     // Only fall back to tabs if fast fetch actually fails
@@ -2920,11 +3163,12 @@ async function createEpub() {
                 
                 try {
                     let content;
+                    const chapterStart = Date.now();
                     
                     if (useFastFetch) {
                         // FAST: Use fetch + DOMParser + cipher tables (no tabs!)
                         content = await fetchChapterFast(chapter.url, config, { password, removeNotes });
-                        content = cleanHtmlForEpub(content, removeIndent);
+                        content = cleanHtmlForEpub(content, removeIndent, imageMode);
                     } else {
                         // For normal (non-encrypted) sites, use direct fetch with rate limiting
                         await rateLimiter.wait();
@@ -2934,16 +3178,21 @@ async function createEpub() {
                         }
                         const html = await response.text();
                         const doc = new DOMParser().parseFromString(html, 'text/html');
-                        content = extractChapterContent(doc, config, removeIndent);
+                        content = extractChapterContent(doc, config, removeIndent, imageMode);
                     }
                     
                     log(`✓ ${chapter.title}`, 'success');
+                    const durationMs = Date.now() - chapterStart;
+                    if (diagnosticsMode) {
+                        log(`⏱️ ${chapter.title} fetched in ${(durationMs / 1000).toFixed(2)}s`);
+                    }
                     
                     return {
                         index: globalIndex,
                         title: chapter.title,
                         content: content,
-                        success: true
+                        success: true,
+                        durationMs
                     };
                 } catch (error) {
                     const isQualityFail = error.message.includes('Quality check');
@@ -2968,7 +3217,9 @@ async function createEpub() {
                     return {
                         index: globalIndex,
                         title: chapter.title,
-                        success: false
+                        chapter,
+                        success: false,
+                        errorMessage: error.message || 'Unknown error'
                     };
                 }
             });
@@ -2980,8 +3231,22 @@ async function createEpub() {
             batchResults.forEach(result => {
                 if (result.success) {
                     collectedChapters.push(result);
+                    successCount++;
+                } else {
+                    failedChapters.push(result.chapter || selectedChapters[result.index]);
+                    failureCount++;
                 }
             });
+
+            processedCount += batchResults.length;
+
+            const elapsedMs = Date.now() - startTime;
+            const chaptersPerSecond = processedCount > 0 ? processedCount / Math.max(elapsedMs / 1000, 1) : 0;
+            const remaining = Math.max(selectedChapters.length - processedCount, 0);
+            const etaSeconds = chaptersPerSecond > 0 ? remaining / chaptersPerSecond : 0;
+            if (els.etaText) {
+                els.etaText.textContent = `ETA: ${remaining > 0 ? formatDuration(etaSeconds) : '0s'} | ${chaptersPerSecond.toFixed(2)} ch/s`;
+            }
             
             // Small delay between batches for safety
             if (batchEnd < selectedChapters.length) {
@@ -3023,21 +3288,64 @@ async function createEpub() {
             log(`EPUB created successfully! (${collectedChapters.length} chapters in ${elapsed}s)`, 'success');
 
             const filename = sanitizeFilename(state.novelInfo.title || 'novel') + '.epub';
-            downloadBlob(epub, filename);
+            await downloadBlob(epub, filename);
             log(`Downloaded: ${filename}`, 'success');
+            await notifyUser('EPUB Complete', `Finished ${collectedChapters.length} chapters.`);
+        } else if (!state.cancelled && collectedChapters.length === 0) {
+            await notifyUser('EPUB Failed', 'No chapters were collected. Check logs.');
         }
 
     } catch (error) {
         log(`Fatal error: ${error.message}`, 'error');
         console.error('EPUB creation error:', error);
+        await notifyUser('EPUB Error', error.message || 'Unexpected error occurred.');
     } finally {
+        const total = selectedChapters.length;
+        const summaryElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log('──────── Run Summary ────────');
+        log(`Total: ${total} | Success: ${successCount} | Failed: ${failureCount} | Time: ${summaryElapsed}s`);
+        if (failureCount > 0) {
+            const failedNames = failedChapters.slice(0, 10).map(ch => ch?.title || 'Unknown chapter').join(', ');
+            log(`Failed chapters: ${failedNames}${failureCount > 10 ? ' ...' : ''}`, 'error');
+        }
+        log('─────────────────────────────');
+
+        state.lastFailedChapters = failedChapters;
+        state.lastRunSummary = { total, successCount, failureCount, summaryElapsed };
+        if (els.btnRetryFailed) {
+            if (failedChapters.length > 0) {
+                els.btnRetryFailed.classList.remove('hidden');
+            } else {
+                els.btnRetryFailed.classList.add('hidden');
+            }
+        }
+
+        if (state.cancelled && failureCount > 0) {
+            await notifyUser('EPUB Cancelled', `${failureCount} chapter(s) failed before cancellation.`);
+        }
+
+        await releaseWakeLock();
         state.isRunning = false;
         els.btnCreate.classList.remove('hidden');
         els.btnCancel.classList.add('hidden');
     }
 }
 
-function extractChapterContent(doc, config, removeIndent = false) {
+async function retryFailedChapters() {
+    if (!state.lastFailedChapters || state.lastFailedChapters.length === 0) {
+        showStatus('No failed chapters to retry', 'info');
+        return;
+    }
+
+    const retryList = [...state.lastFailedChapters]
+        .map(ch => ({ ...ch }))
+        .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+    showStatus(`Retrying ${retryList.length} failed chapter(s)`, 'info');
+    await createEpub(retryList);
+}
+
+function extractChapterContent(doc, config, removeIndent = false, imageMode = 'original') {
     // Try site-specific content selectors
     for (const sel of config.contentSelectors) {
         const el = doc.querySelector(sel);
@@ -3065,7 +3373,7 @@ function extractChapterContent(doc, config, removeIndent = false) {
             }
             
             // Clean up the HTML for EPUB compatibility
-            return cleanHtmlForEpub(clone.innerHTML, removeIndent);
+            return cleanHtmlForEpub(clone.innerHTML, removeIndent, imageMode);
         }
     }
     
@@ -3073,7 +3381,7 @@ function extractChapterContent(doc, config, removeIndent = false) {
 }
 
 // Clean HTML for EPUB - fix entities, remove problematic elements
-function cleanHtmlForEpub(html, removeIndent = false) {
+function cleanHtmlForEpub(html, removeIndent = false, imageMode = 'original') {
     // Normalize apostrophes FIRST for consistent matching
     html = html.replace(/[''`´]/g, "'");
     
@@ -3241,6 +3549,33 @@ function cleanHtmlForEpub(html, removeIndent = false) {
     html = html.replace(/<hr\s*>/gi, '<hr/>');
     html = html.replace(/<hr\s*\/?\s*>/gi, '<hr/>');
     
+    // Handle image mode before final XHTML image normalization.
+    if (imageMode === 'remove') {
+        html = html.replace(/<img[^>]*\/?\s*>/gi, '');
+    } else if (imageMode === 'skip-small') {
+        html = html.replace(/<img[^>]*\/?\s*>/gi, (tag) => {
+            const widthMatch = tag.match(/\bwidth\s*=\s*['\"]?(\d+)/i);
+            const heightMatch = tag.match(/\bheight\s*=\s*['\"]?(\d+)/i);
+            const styleMatch = tag.match(/style\s*=\s*['\"]([^'\"]+)/i);
+            let width = widthMatch ? parseInt(widthMatch[1], 10) : null;
+            let height = heightMatch ? parseInt(heightMatch[1], 10) : null;
+
+            if (styleMatch) {
+                const style = styleMatch[1];
+                const styleWidth = style.match(/width\s*:\s*(\d+)px/i);
+                const styleHeight = style.match(/height\s*:\s*(\d+)px/i);
+                if (styleWidth) width = parseInt(styleWidth[1], 10);
+                if (styleHeight) height = parseInt(styleHeight[1], 10);
+            }
+
+            const smallBySize = (width !== null && width <= 80) || (height !== null && height <= 80);
+            if (smallBySize) {
+                return '';
+            }
+            return tag;
+        });
+    }
+
     // Fix <img> tags to be self-closing
     html = html.replace(/<img([^>]*)(?<!\/)>/gi, '<img$1/>');
     
@@ -3376,6 +3711,10 @@ function decryptAllTextNodes(root) {
 }
 
 function cancelCreation() {
+    if (state.isRunning) {
+        const confirmed = window.confirm('Cancel current EPUB creation? Progress so far will be lost.');
+        if (!confirmed) return;
+    }
     state.cancelled = true;
     log('Cancelling...', 'error');
 }

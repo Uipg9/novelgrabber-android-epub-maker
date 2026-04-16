@@ -107,6 +107,7 @@ body {
     .form-group input[type="url"],
     .form-group input[type="password"],
     .form-group input[type="number"],
+    .form-group select,
     .btn {
         min-height: 44px;
     }
@@ -206,6 +207,11 @@ body {
     .log-actions {
         flex-direction: column;
     }
+
+    .donation-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
 
 .panel {
@@ -253,7 +259,8 @@ body {
 .form-group input[type="text"],
 .form-group input[type="url"],
 .form-group input[type="password"],
-.form-group input[type="number"] {
+.form-group input[type="number"],
+.form-group select {
     width: 100%;
     padding: 10px 12px;
     background: var(--bg-secondary);
@@ -540,6 +547,13 @@ body {
     color: var(--text-muted);
 }
 
+.eta-text {
+    margin-top: 4px;
+    text-align: center;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+}
+
 .progress-log {
     max-height: 200px;
     overflow-y: auto;
@@ -573,6 +587,28 @@ body {
     flex: 1;
     font-size: 0.78rem;
     padding: 8px 10px;
+}
+
+.donation-card {
+    background: linear-gradient(135deg, rgba(72, 187, 120, 0.12), rgba(22, 33, 62, 1));
+}
+
+.donation-copy {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-bottom: 10px;
+}
+
+.donation-row input {
+    min-height: 42px;
+}
+
+.paypal-container {
+    margin-top: 10px;
+}
+
+.paypal-container:not(.hidden) {
+    display: block;
 }
 
 /* Footer */
