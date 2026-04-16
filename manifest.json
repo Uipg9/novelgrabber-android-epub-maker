@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "Novel to EPUB Creator",
+  "version": "1.2.0",
+  "description": "Convert web novels to EPUB - Supports 10+ sites with auto-decryption for ChrysanthemumGarden",
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "downloads",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://chrysanthemumgarden.com/*",
+    "https://*.chrysanthemumgarden.com/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "action": {
+    "default_title": "Novel to EPUB Creator",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chrysanthemumgarden.com/*",
+        "https://*.chrysanthemumgarden.com/*"
+      ],
+      "js": ["src/content/content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/ui/*",
+        "src/tools/*",
+        "src/popup/*",
+        "icons/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

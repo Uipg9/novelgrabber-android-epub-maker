@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CG EPUB Decryptor</title>
+    <style>
+        :root {
+            --primary: #9f7aea;
+            --primary-dark: #805ad5;
+            --bg: #1a1a2e;
+            --bg-secondary: #16213e;
+            --text: #e2e8f0;
+            --text-muted: #a0aec0;
+            --success: #48bb78;
+            --error: #f56565;
+            --border: #2d3748;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        .container { max-width: 600px; width: 100%; }
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { color: var(--primary); margin-bottom: 8px; }
+        .subtitle { color: var(--text-muted); }
+        .dropzone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: var(--bg-secondary);
+            position: relative;
+        }
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--primary);
+            background: rgba(159, 122, 234, 0.1);
+        }
+        .dropzone-icon { font-size: 48px; margin-bottom: 16px; }
+        .dropzone-text { font-size: 1.1rem; margin-bottom: 8px; }
+        .dropzone-hint { color: var(--text-muted); font-size: 0.875rem; }
+        .file-input { 
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .progress-section { margin-top: 24px; display: none; }
+        .progress-section.visible { display: block; }
+        .progress-bar-container {
+            height: 8px;
+            background: var(--bg);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .progress-text { color: var(--text-muted); text-align: center; }
+        .result-section {
+            margin-top: 24px;
+            padding: 20px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            display: none;
+        }
+        .result-section.visible { display: block; }
+        .result-section.success { border: 1px solid var(--success); }
+        .result-section.error { border: 1px solid var(--error); }
+        .result-title { font-size: 1rem; margin-bottom: 12px; }
+        .result-stats { font-size: 0.875rem; color: var(--text-muted); }
+        .result-stats div { margin-bottom: 4px; }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 16px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .error-message { color: var(--error); }
+        .loading { opacity: 0.5; pointer-events: none; }
+        .notice {
+            background: rgba(245, 101, 101, 0.1);
+            border: 1px solid var(--error);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            font-size: 0.875rem;
+        }
+        .notice strong { color: var(--error); }
+        .notice p { margin-top: 8px; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 CG EPUB Decryptor</h1>
+            <p class="subtitle">Decrypt ChrysanthemumGarden EPUB files (Standalone Tool)</p>
+        </header>
+
+        <div class="notice">
+            <strong>⚠️ Important Note:</strong>
+            <p>ChrysanthemumGarden uses <strong>font-based encryption</strong> that cannot be fully reversed without the original font files. This tool attempts pattern-based decryption but may not produce perfect results.</p>
+            <p><strong>Best method:</strong> Use the extension's main downloader which opens chapters in the browser where fonts render correctly.</p>
+        </div>
+
+        <div class="dropzone" id="dropzone">
+            <div class="dropzone-icon">📁</div>
+            <div class="dropzone-text">Drop EPUB file here</div>
+            <div class="dropzone-hint">or click to browse</div>
+            <input type="file" class="file-input" id="fileInput" accept=".epub">
+        </div>
+
+        <div class="progress-section" id="progressSection">
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <p class="progress-text" id="progressText">Processing...</p>
+        </div>
+
+        <div class="result-section" id="resultSection">
+            <h3 class="result-title" id="resultTitle">Complete!</h3>
+            <div class="result-stats" id="resultStats"></div>
+            <button class="btn btn-primary" id="downloadBtn">
+                <span>📥</span> Download Decrypted EPUB
+            </button>
+        </div>
+    </div>
+
+    <script>
+    // ============ JSZIP INLINE (minimal needed functions) ============
+    // Using a minimal inline implementation to avoid CDN issues
+    
+    // Actually, let's load JSZip dynamically and handle errors
+    const JSZIP_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    
+    function loadJSZip() {
+        return new Promise((resolve, reject) => {
+            if (window.JSZip) {
+                resolve(window.JSZip);
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = JSZIP_CDN;
+            script.onload = () => resolve(window.JSZip);
+            script.onerror = () => {
+                // Try alternative CDN
+                const script2 = document.createElement('script');
+                script2.src = 'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js';
+                script2.onload = () => resolve(window.JSZip);
+                script2.onerror = () => reject(new Error('Failed to load JSZip library'));
+                document.head.appendChild(script2);
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    // ============ CIPHER TABLES ============
+    const STANDARD_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const CIPHER_DATA = [
+        { key: "tonquerzlawicvfjpsyhgdmkbxJKABRUDQZCTHFVLIWNEYPSXGOM", selector: "span.jum" },
+        { key: "qVTPNEAHbykpxiYtlWdOzUGnsMcZXBQuSaRKICJwgFLDefrvhmjo", selector: "span[style*='ZxXoTeIptL']" },
+        { key: "PwyUBVTYqAXxZMfEjrSeDazCkWoivHJbKltNdLOhupgImQscnFRG", selector: "span[style*='ijqXQijeiD']" },
+        { key: "vDxtzobGrXESwLWypAkZOMBYQNsdPUTVcFhnHajgRmiKfeuCIJlq", selector: "span[style*='EjUwPEOFVm']" },
+        { key: "dTKbCMwpkGWJrJOUiFVesPoXRfQSmuvqglEyDBLnzIYHAZcaxthN", selector: "span[style*='WTKNOkuWha']" },
+        { key: "JznCuUZtTgKGAkvwBSOYLHsihaNEPpMVefWRoqlymbjcIXrdQDFx", selector: "span[style*='rnlfJtfRCW']" },
+        { key: "cHMZtWYfaEipjXbRPLogAFSBDVrOmUNxIlkeCszTuwKhdJnGqQyv", selector: "span[style*='LPJMfkmHKG']" },
+        { key: "iKhDSORsAbqBtGNYpecfHQEwklxJlWCmTLjFdzrPXuvVonMygUZa", selector: "span[style*='PWJEddcfVv']" },
+        { key: "gjkChAdlBJYOVIxTXnisWLvmyEMtuGzPpaebFDcZoRHSwUrNfqKQ", selector: "span[style*='ofcUGYMWCy']" },
+        { key: "FGqNYQLTPUHecErxRuCjBkDXbMaKyfzOhJdipolAgWItZVsnmSvw", selector: "span[style*='hffmcMyCbf']" },
+        { key: "upTZVvjGaMwRBUXelqJACQfFkybrEnmoWcgHxYPztSshDOIdLiKN", selector: "span[style*='ktlmWRazmy']" },
+        { key: "RWOVtgzYjNfXMPQqscdZKwrLlFBCevhHSAEDIpnoGTukibyxamJU", selector: "span[style*='UxneBYgsjE']" },
+        { key: "uZCQtkAyRnJgxGVTbEXYwOBlWhvmKqoPrjdceHNDpUzfsFMaisIL", selector: "span[style*='XMgbgIppHk']" },
+        { key: "inDFJlbUacwvHOIdxushAoLVMZCSeYjPXkzNtQRfyqTrpWGgmEBK", selector: "span[style*='lqagMDCZsf']" },
+        { key: "ikvXhpVftrOcGCBaZxgFSwmWEjbAoLePKnTqUDMIyJdRlQuzsYNH", selector: "span[style*='UTBCOGYVcD']" },
+        { key: "HwSjBkqPuabFCNgvlXGiEDpZJURnfKoLATOyQImshtYdWMVrecxz", selector: "span[style*='neTnLsdxBa']" },
+        { key: "EdmCAkeowsNOfGJKbMgTitzIUjLxnrYQZXqcvuylWHDSphRBaFVP", selector: "span[style*='LQrKfqvDvK']" },
+        { key: "YuZqUFnHITMGlebCtQrKLSgfxJvDwsBiaWRkNdEXmOjVzohAycpP", selector: "span[style*='qmmADVPJyD']" },
+        { key: "UaAfIxLRXihODSjvBEFJeZuGTPlWnVQzcyqrHNkmoMKCgbtsdYwp", selector: "span[style*='SGBznXcdPC']" },
+        { key: "jbsUhGHLVKtioYfAnrvTIBdpFOWgMExDRPyXNzeQawZulkSqmcCJ", selector: "span[style*='FnKeibFQhj']" },
+    ];
+
+    // Build cipher tables - map FROM cipher TO standard (for decryption)
+    const cipherTables = new Map();
+    for (const { key, selector } of CIPHER_DATA) {
+        const table = new Map();
+        for (let i = 0; i < STANDARD_ALPHABET.length; i++) {
+            // key[i] is the cipher char, STANDARD_ALPHABET[i] is what it decrypts to
+            table.set(key[i], STANDARD_ALPHABET[i]);
+        }
+        cipherTables.set(selector, table);
+    }
+
+    // ============ DOM ELEMENTS ============
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const progressSection = document.getElementById('progressSection');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const resultSection = document.getElementById('resultSection');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultStats = document.getElementById('resultStats');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let decryptedBlob = null;
+    let originalFilename = '';
+
+    // ============ EVENT LISTENERS ============
+    // Click on dropzone should trigger file input
+    dropzone.addEventListener('click', (e) => {
+        if (e.target !== fileInput) {
+            fileInput.click();
+        }
+    });
+    
+    // File input change
+    fileInput.addEventListener('change', (e) => {
+        e.stopPropagation();
+        console.log('File selected:', e.target.files);
+        if (e.target.files && e.target.files.length > 0) {
+            processFile(e.target.files[0]);
+        }
+    });
+
+    // Drag events
+    dropzone.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add('dragover');
+    });
+
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add('dragover');
+    });
+
+    dropzone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('dragover');
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('dragover');
+        
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            processFile(files[0]);
+        }
+    });
+
+    downloadBtn.addEventListener('click', () => {
+        if (decryptedBlob) {
+            const url = URL.createObjectURL(decryptedBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = originalFilename.replace('.epub', '_decrypted.epub');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+    });
+
+    // ============ DECRYPTION FUNCTION ============
+    // Build a master decryption table for raw text
+    const MASTER_CIPHER_KEY = "tonquerzlawicvfjpsyhgdmkbxJKABRUDQZCTHFVLIWNEYPSXGOM";
+    const masterDecryptTable = new Map();
+    for (let i = 0; i < STANDARD_ALPHABET.length; i++) {
+        masterDecryptTable.set(MASTER_CIPHER_KEY[i], STANDARD_ALPHABET[i]);
+    }
+    
+    // Decrypt text using master table
+    function decryptText(text) {
+        return text.split('').map(c => masterDecryptTable.get(c) || c).join('');
+    }
+    
+    // Check if text looks encrypted
+    function looksEncrypted(text) {
+        if (!text || text.length < 15) return false;
+        let changes = 0;
+        let letters = 0;
+        for (const c of text) {
+            if (/[a-zA-Z]/.test(c)) {
+                letters++;
+                if (masterDecryptTable.has(c) && masterDecryptTable.get(c) !== c) {
+                    changes++;
+                }
+            }
+        }
+        return letters > 8 && (changes / letters) > 0.25;
+    }
+    
+    function decryptHtml(html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        let count = 0;
+        
+        // Method 1: Apply cipher tables to specific selectors
+        for (const [selector, table] of cipherTables) {
+            try {
+                const elements = doc.querySelectorAll(selector);
+                elements.forEach(el => {
+                    const orig = el.textContent;
+                    const decrypted = orig.split('').map(c => table.get(c) || c).join('');
+                    const textNode = doc.createTextNode(decrypted);
+                    if (el.parentNode) {
+                        el.parentNode.replaceChild(textNode, el);
+                        count++;
+                    }
+                });
+            } catch (e) {}
+        }
+        
+        // Method 2: Generic .jum class
+        try {
+            const jumElements = doc.querySelectorAll('.jum');
+            const jumTable = cipherTables.get('span.jum');
+            if (jumTable) {
+                jumElements.forEach(el => {
+                    const orig = el.textContent;
+                    const decrypted = orig.split('').map(c => jumTable.get(c) || c).join('');
+                    const textNode = doc.createTextNode(decrypted);
+                    if (el.parentNode) {
+                        el.parentNode.replaceChild(textNode, el);
+                        count++;
+                    }
+                });
+            }
+        } catch (e) {}
+        
+        // Method 3: Decrypt ALL text nodes that look encrypted
+        // This is crucial for EPUBs where encrypted text is not in span elements
+        const walker = doc.createTreeWalker(doc.body || doc.documentElement, NodeFilter.SHOW_TEXT, null, false);
+        const nodesToProcess = [];
+        let node;
+        while (node = walker.nextNode()) {
+            if (node.textContent && node.textContent.trim().length > 10) {
+                nodesToProcess.push(node);
+            }
+        }
+        
+        for (const textNode of nodesToProcess) {
+            const orig = textNode.textContent;
+            if (looksEncrypted(orig)) {
+                const decrypted = decryptText(orig);
+                if (decrypted !== orig) {
+                    textNode.textContent = decrypted;
+                    count++;
+                }
+            }
+        }
+        
+        // Get the result
+        let result = doc.body ? doc.body.innerHTML : doc.documentElement.outerHTML;
+        
+        // If original was XHTML, preserve that
+        if (html.includes('<?xml') || html.includes('xmlns')) {
+            const head = doc.head ? doc.head.innerHTML : '';
+            result = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+${head}
+</head>
+<body>
+${doc.body ? doc.body.innerHTML : ''}
+</body>
+</html>`;
+        }
+        
+        return { html: result, count };
+    }
+
+    // ============ PROCESS FILE ============
+    async function processFile(file) {
+        console.log('Processing file:', file.name);
+        
+        if (!file.name.toLowerCase().endsWith('.epub')) {
+            alert('Please select an EPUB file');
+            return;
+        }
+
+        originalFilename = file.name;
+        progressSection.classList.add('visible');
+        resultSection.classList.remove('visible', 'success', 'error');
+        progressBar.style.width = '0%';
+        progressText.textContent = 'Loading JSZip library...';
+        dropzone.classList.add('loading');
+
+        const startTime = Date.now();
+        let processedFiles = 0;
+        let modifiedFiles = 0;
+        let decryptedElements = 0;
+
+        try {
+            // Load JSZip
+            console.log('Loading JSZip...');
+            const JSZip = await loadJSZip();
+            console.log('JSZip loaded successfully');
+            
+            progressText.textContent = 'Reading EPUB file...';
+            progressBar.style.width = '10%';
+            
+            // Read the EPUB
+            console.log('Reading EPUB...');
+            const arrayBuffer = await file.arrayBuffer();
+            const zip = await JSZip.loadAsync(arrayBuffer);
+            console.log('EPUB loaded');
+            
+            progressText.textContent = 'Scanning files...';
+            progressBar.style.width = '20%';
+            
+            // Get all files
+            const allFiles = Object.keys(zip.files);
+            const htmlFiles = allFiles.filter(f => 
+                !zip.files[f].dir && 
+                (f.endsWith('.html') || f.endsWith('.xhtml') || f.endsWith('.htm'))
+            );
+            
+            progressText.textContent = `Found ${htmlFiles.length} HTML files to process`;
+            
+            // Process each HTML file
+            for (let i = 0; i < htmlFiles.length; i++) {
+                const filename = htmlFiles[i];
+                const percent = 20 + Math.round(((i + 1) / htmlFiles.length) * 70);
+                progressBar.style.width = `${percent}%`;
+                progressText.textContent = `Processing: ${filename.split('/').pop()} (${i+1}/${htmlFiles.length})`;
+                
+                try {
+                    const content = await zip.file(filename).async('string');
+                    const { html, count } = decryptHtml(content);
+                    
+                    processedFiles++;
+                    if (count > 0) {
+                        modifiedFiles++;
+                        decryptedElements += count;
+                        zip.file(filename, html);
+                    }
+                } catch (fileError) {
+                    console.error('Error processing file:', filename, fileError);
+                }
+            }
+            
+            // Generate new EPUB
+            progressBar.style.width = '95%';
+            progressText.textContent = 'Building decrypted EPUB...';
+            
+            decryptedBlob = await zip.generateAsync({ 
+                type: 'blob',
+                mimeType: 'application/epub+zip',
+                compression: 'DEFLATE',
+                compressionOptions: { level: 6 }
+            });
+            
+            const duration = Date.now() - startTime;
+            
+            progressBar.style.width = '100%';
+            
+            // Show results
+            resultSection.classList.add('visible', 'success');
+            resultSection.classList.remove('error');
+            
+            if (decryptedElements > 0) {
+                resultTitle.textContent = '✓ Decryption Complete!';
+                downloadBtn.style.display = 'inline-flex';
+            } else {
+                resultTitle.textContent = 'ℹ️ No encrypted content found';
+                resultStats.innerHTML += '<div style="margin-top:8px;color:#ed8936">This EPUB may not contain ChrysanthemumGarden encrypted text, or it may already be decrypted.</div>';
+                downloadBtn.style.display = 'none';
+            }
+            
+            resultStats.innerHTML = `
+                <div>📄 Files processed: ${processedFiles}</div>
+                <div>✏️ Files modified: ${modifiedFiles}</div>
+                <div>🔓 Elements decrypted: ${decryptedElements}</div>
+                <div>⏱️ Time: ${duration}ms</div>
+            ` + (decryptedElements === 0 ? '<div style="margin-top:8px;color:#ed8936">This EPUB may not contain ChrysanthemumGarden encrypted text.</div>' : '');
+
+        } catch (error) {
+            console.error('Decryption failed:', error);
+            resultSection.classList.add('visible', 'error');
+            resultSection.classList.remove('success');
+            resultTitle.textContent = '✗ Decryption Failed';
+            resultStats.innerHTML = `<div class="error-message">${error.message}</div>`;
+            downloadBtn.style.display = 'none';
+        }
+
+        progressSection.classList.remove('visible');
+        dropzone.classList.remove('loading');
+    }
+    
+    // Pre-load JSZip
+    loadJSZip().catch(e => console.warn('JSZip preload failed, will retry on use:', e));
+    </script>
+</body>
+</html>

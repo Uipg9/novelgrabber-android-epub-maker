@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Novel to EPUB Creator</title>
+    <link rel="stylesheet" href="main.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>📚 Novel to EPUB Creator</h1>
+                <p>Convert web novels to EPUB • Supports 10+ sites • Auto-decrypts ChrysanthemumGarden</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Left Panel: Source & Options -->
+            <section class="panel panel-left">
+                <div class="card">
+                    <h2>📄 Source</h2>
+                    <div class="form-group">
+                        <label for="source-url">Novel URL</label>
+                        <div class="input-row">
+                            <input type="url" id="source-url" placeholder="https://novelsite.com/novel/...">
+                            <button id="btn-fetch" class="btn btn-primary">Fetch</button>
+                        </div>
+                        <div class="supported-sites">
+                            Supports: ChrysanthemumGarden, NovelHall, NovelFull, WuxiaWorld, RoyalRoad, AO3, FFN, ScribbleHub, WebNovel & more
+                        </div>
+                    </div>
+                    <div id="source-status" class="status-message"></div>
+                </div>
+
+                <div class="card options-card">
+                    <h2>⚙️ Options</h2>
+                    
+                    <div class="options-grid">
+                        <div class="form-group option-item">
+                            <label for="start-chapter">📖 Chapter Range</label>
+                            <div class="input-row compact">
+                                <input type="number" id="start-chapter" placeholder="1" min="1" value="1">
+                                <span class="range-sep">→</span>
+                                <input type="number" id="end-chapter" placeholder="All">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group option-item">
+                            <label for="delay">⏱️ Request Delay</label>
+                            <div class="input-row compact">
+                                <input type="number" id="delay" value="0" min="0" max="5000" step="100">
+                                <span class="unit">ms</span>
+                            </div>
+                            <small class="hint">0 = fastest, increase if blocked</small>
+                        </div>
+                        
+                        <div class="form-group option-item checkbox-item">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="include-images">
+                                <span class="toggle-switch"></span>
+                                <span>🖼️ Include Images</span>
+                            </label>
+                        </div>
+                        
+                        <div class="form-group option-item checkbox-item">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="remove-indent" checked>
+                                <span class="toggle-switch"></span>
+                                <span>📝 Remove Indentation</span>
+                            </label>
+                        </div>
+                        
+                        <div class="form-group option-item checkbox-item">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="remove-notes" checked>
+                                <span class="toggle-switch"></span>
+                                <span>🗑️ Remove TL/Author Notes</span>
+                            </label>
+                        </div>
+                        
+                        <div class="form-group option-item">
+                            <label for="password">🔐 Password</label>
+                            <input type="password" id="password" placeholder="For locked chapters">
+                        </div>
+                        
+                        <div class="form-group option-item">
+                            <label for="cover-url">🖼️ Cover URL</label>
+                            <input type="text" id="cover-url" placeholder="Auto-detected or paste URL">
+                        </div>
+                        
+                        <div class="form-group option-item checkbox-item">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="turbo-mode">
+                                <span class="toggle-switch"></span>
+                                <span>🚀 Turbo Mode</span>
+                            </label>
+                        </div>
+                        
+                        <div class="form-group option-item checkbox-item">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="safe-mode">
+                                <span class="toggle-switch"></span>
+                                <span>🔒 Safe Mode (Sequential)</span>
+                            </label>
+                        </div>
+                        
+                        <div class="form-group option-item speed-settings">
+                            <label>⚡ Speed Settings</label>
+                            <div class="speed-inputs">
+                                <div class="speed-input">
+                                    <label for="batch-size">Tabs</label>
+                                    <input type="number" id="batch-size" value="5" min="1" max="100" step="1">
+                                </div>
+                                <div class="speed-input">
+                                    <label for="timeout">Timeout(s)</label>
+                                    <input type="number" id="timeout-seconds" value="60" min="10" max="300" step="10">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Center Panel: Novel Info -->
+            <section class="panel panel-center">
+                <div class="card novel-card">
+                    <div id="novel-loading" class="loading-placeholder">
+                        <p>Enter a URL and click Fetch to load novel info</p>
+                    </div>
+                    <div id="novel-info" class="novel-info hidden">
+                        <img id="novel-cover" class="novel-cover" src="" alt="Cover">
+                        <div class="novel-details">
+                            <h2 id="novel-title">Novel Title</h2>
+                            <p id="novel-author" class="novel-author">Author</p>
+                            <p id="novel-description" class="novel-description"></p>
+                            <div id="novel-stats" class="novel-stats">
+                                <span id="chapter-count">0 chapters</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chapter List -->
+                <div class="card chapters-card">
+                    <div class="chapters-header">
+                        <h3>📑 Chapters</h3>
+                        <div class="chapters-actions">
+                            <button id="btn-select-all" class="btn btn-small">Select All</button>
+                            <button id="btn-select-none" class="btn btn-small">Select None</button>
+                        </div>
+                    </div>
+                    <div id="chapter-list" class="chapter-list">
+                        <p class="placeholder">No chapters loaded</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Progress & Actions -->
+            <section class="panel panel-right">
+                <div class="card">
+                    <h2>🚀 Create EPUB</h2>
+                    <button id="btn-create" class="btn btn-primary btn-large" disabled>
+                        📥 Create EPUB
+                    </button>
+                    <button id="btn-cancel" class="btn btn-secondary btn-large hidden">
+                        ⏹️ Cancel
+                    </button>
+                </div>
+
+                <div class="card progress-card">
+                    <h3>Progress</h3>
+                    <div class="progress-container">
+                        <div class="progress-bar-bg">
+                            <div id="progress-bar" class="progress-bar"></div>
+                        </div>
+                        <p id="progress-text" class="progress-text">Ready</p>
+                    </div>
+                    <div id="progress-log" class="progress-log"></div>
+                    <button id="btn-copy-log" class="btn btn-secondary btn-small" style="margin-top: 8px; font-size: 12px; padding: 4px 12px;">
+                        📋 Copy Log
+                    </button>
+                </div>
+
+                <!-- Tools Section removed - decryptor doesn't work well with font-based encryption -->
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Novel to EPUB Creator v1.1.0 | Supports ChrysanthemumGarden, NovelHall, NovelFull, RoyalRoad, AO3 & more</p>
+        </footer>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>

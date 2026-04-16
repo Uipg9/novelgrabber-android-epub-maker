@@ -1,0 +1,17 @@
+{
+  "name": "novelgrabber-web-to-epub",
+  "version": "1.0.0",
+  "description": "Browser extension to convert web novels to EPUB with integrated decryption",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "watch": "node scripts/build.js --watch",
+    "lint": "eslint src/",
+    "test": "node --test tests/"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  },
+  "author": "NovelGrabber",
+  "license": "GPL-3.0"
+}

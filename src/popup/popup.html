@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CG EPUB Creator</title>
+    <style>
+        :root {
+            --primary: #9f7aea;
+            --primary-dark: #805ad5;
+            --bg: #1a1a2e;
+            --bg-secondary: #16213e;
+            --text: #e2e8f0;
+            --text-muted: #a0aec0;
+            --success: #48bb78;
+            --error: #f56565;
+            --border: #2d3748;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            width: 280px;
+            padding: 16px;
+        }
+        header { text-align: center; margin-bottom: 16px; }
+        h1 { font-size: 1.25rem; color: var(--primary); margin-bottom: 4px; }
+        .subtitle { font-size: 0.75rem; color: var(--text-muted); }
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+        }
+        .btn-primary:hover { transform: translateY(-1px); }
+        .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: var(--border); }
+        .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+        }
+        .status.supported { background: rgba(72, 187, 120, 0.2); color: var(--success); }
+        .status.unsupported { background: rgba(160, 174, 192, 0.2); color: var(--text-muted); }
+        .info { font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 8px; }
+        footer { text-align: center; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+        .version { font-size: 0.7rem; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📚 CG EPUB</h1>
+        <p class="subtitle">Chrysanthemum Garden to EPUB</p>
+    </header>
+
+    <div id="status" class="status unsupported">
+        Checking page...
+    </div>
+
+    <button id="btn-open-ui" class="btn btn-primary">
+        📖 Open EPUB Creator
+    </button>
+
+    <button id="btn-decrypt" class="btn btn-secondary">
+        🔓 Decrypt This Page
+    </button>
+
+    <p class="info">Works on any website - click to open the full interface</p>
+
+    <footer>
+        <p class="version">v1.0.0</p>
+    </footer>
+
+    <script src="popup.js"></script>
+</body>
+</html>
