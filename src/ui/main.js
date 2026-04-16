@@ -996,11 +996,28 @@ function formatDuration(seconds) {
     return `${sec}s`;
 }
 
+async function withTimeout(promise, ms, timeoutMessage) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), ms);
+    });
+
+    try {
+        return await Promise.race([promise, timeoutPromise]);
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 async function requestNotificationPermission() {
     if (!('Notification' in window)) return;
     if (Notification.permission === 'default') {
         try {
-            await Notification.requestPermission();
+            await withTimeout(
+                Notification.requestPermission(),
+                5000,
+                'Notification permission request timed out'
+            );
         } catch (e) {
             console.warn('Notification permission request failed:', e);
         }
@@ -1024,7 +1041,11 @@ async function acquireWakeLock() {
     if (state.wakeLock) return;
 
     try {
-        state.wakeLock = await navigator.wakeLock.request('screen');
+        state.wakeLock = await withTimeout(
+            navigator.wakeLock.request('screen'),
+            4000,
+            'Wake lock request timed out'
+        );
         state.wakeLock.addEventListener('release', () => {
             state.wakeLock = null;
         });
@@ -3145,8 +3166,10 @@ async function createEpub(overrideChapters = null) {
     }
 
     if (backgroundMode) {
-        await requestNotificationPermission();
-        await acquireWakeLock();
+        // Run in background without blocking EPUB start.
+        requestNotificationPermission().catch(() => {});
+        acquireWakeLock().catch(() => {});
+        log('📱 Background mode enabled (non-blocking setup)');
     }
     
     // ============ SAFE MODE / AUTO-SEQUENTIAL ============
@@ -3216,12 +3239,20 @@ async function createEpub(overrideChapters = null) {
                     
                     if (useFastFetch) {
                         // FAST: Use fetch + DOMParser + cipher tables (no tabs!)
-                        content = await fetchChapterFast(chapter.url, config, { password, removeNotes });
+                        content = await withTimeout(
+                            fetchChapterFast(chapter.url, config, { password, removeNotes }),
+                            timeoutMs,
+                            `Timeout after ${timeoutSeconds}s`
+                        );
                         content = cleanHtmlForEpub(content, removeIndent, imageMode);
                     } else {
                         // For normal (non-encrypted) sites, use direct fetch with rate limiting
                         await rateLimiter.wait();
-                        const response = await fetch(chapter.url, { credentials: 'include' });
+                        const response = await withTimeout(
+                            fetch(chapter.url, { credentials: 'include' }),
+                            timeoutMs,
+                            `Timeout after ${timeoutSeconds}s`
+                        );
                         if (response.status === 429) {
                             throw new Error('Rate limited (HTTP 429)');
                         }
