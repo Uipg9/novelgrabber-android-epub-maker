@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Novel to EPUB Creator",
-  "version": "1.2.0",
+  "version": "1.2.5",
   "description": "Convert web novels to EPUB - Supports 10+ sites with auto-decryption for ChrysanthemumGarden",
   "icons": {
     "16": "icons/icon16.svg",

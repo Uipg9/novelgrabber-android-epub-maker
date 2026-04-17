@@ -3129,10 +3129,8 @@ async function createEpub(overrideChapters = null) {
     const password = els.password?.value?.trim() || '';
     const turboMode = els.turboMode?.checked ?? false;
     const safeMode = els.safeMode?.checked ?? false;
-    const includeImages = els.includeImages?.checked ?? true;
-    let imageMode = els.imageMode?.value || 'original';
-    if (!includeImages) imageMode = 'remove';
-    const customBatchSize = parseInt(els.batchSize?.value) || 5;
+    const parsedBatchSize = parseInt(els.batchSize?.value, 10);
+    const customBatchSize = Number.isFinite(parsedBatchSize) ? parsedBatchSize : 5;
 
     log(`Starting EPUB creation for ${selectedChapters.length} chapters`);
     if (config.hasEncryption) {
@@ -3162,8 +3160,13 @@ async function createEpub(overrideChapters = null) {
         BATCH_SIZE = 25;
         log(`🚀 TURBO MODE: 25 parallel + auto rate limiting`, 'success');
     } else {
-        BATCH_SIZE = Math.min(customBatchSize, 15);
+        BATCH_SIZE = Math.max(1, Math.min(customBatchSize, 15));
         log(`⚡ Speed: ${BATCH_SIZE} parallel requests (with rate limiting)`);
+    }
+
+    if (!Number.isFinite(BATCH_SIZE) || BATCH_SIZE < 1) {
+        BATCH_SIZE = 1;
+        log('⚠️ Invalid Tabs value detected; forcing 1 for stability.', 'error');
     }
 
     // Reset rate limiter for new session
@@ -3209,7 +3212,7 @@ async function createEpub(overrideChapters = null) {
                     if (useFastFetch) {
                         // FAST: Use fetch + DOMParser + cipher tables (no tabs!)
                         content = await fetchChapterFast(chapter.url, config, { password, removeNotes });
-                        content = cleanHtmlForEpub(content, removeIndent, imageMode);
+                        content = cleanHtmlForEpub(content, removeIndent);
                     } else {
                         // For normal (non-encrypted) sites, use direct fetch with rate limiting
                         await rateLimiter.wait();
@@ -3219,7 +3222,7 @@ async function createEpub(overrideChapters = null) {
                         }
                         const html = await response.text();
                         const doc = new DOMParser().parseFromString(html, 'text/html');
-                        content = extractChapterContent(doc, config, removeIndent, imageMode);
+                        content = extractChapterContent(doc, config, removeIndent);
                     }
 
                     log(`✓ ${chapter.title}`, 'success');
