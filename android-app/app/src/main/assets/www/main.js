@@ -3135,9 +3135,10 @@ async function createEpub(overrideChapters = null) {
     const includeImages = els.includeImages?.checked ?? true;
     let imageMode = els.imageMode?.value || 'original';
     if (!includeImages) imageMode = 'remove';
-    const customBatchSize = parseInt(els.batchSize?.value) || 5;
-    const timeoutSeconds = parseInt(els.timeoutSeconds?.value) || 60;
-    const timeoutMs = timeoutSeconds * 1000;
+    const parsedBatchSize = parseInt(els.batchSize?.value, 10);
+    const customBatchSize = Number.isFinite(parsedBatchSize) ? parsedBatchSize : 5;
+    const parsedTimeoutSeconds = parseInt(els.timeoutSeconds?.value, 10);
+    const timeoutSeconds = Number.isFinite(parsedTimeoutSeconds) ? parsedTimeoutSeconds : 60;
     state.diagnosticsEnabled = diagnosticsMode;
 
     log(`Starting EPUB creation for ${selectedChapters.length} chapters`);
@@ -3189,8 +3190,19 @@ async function createEpub(overrideChapters = null) {
         BATCH_SIZE = 25;
         log(`🚀 TURBO MODE: 25 parallel + auto rate limiting`, 'success');
     } else {
-        BATCH_SIZE = Math.min(customBatchSize, 15);
+        BATCH_SIZE = Math.max(1, Math.min(customBatchSize, 15));
         log(`⚡ Speed: ${BATCH_SIZE} parallel requests (with rate limiting)`);
+    }
+
+    if (BATCH_SIZE <= 0 || !Number.isFinite(BATCH_SIZE)) {
+        BATCH_SIZE = 1;
+        log('⚠️ Invalid batch size detected; forcing 1 thread for stability.', 'error');
+    }
+
+    const safeTimeoutSeconds = Math.max(10, timeoutSeconds);
+    const timeoutMs = safeTimeoutSeconds * 1000;
+    if (safeTimeoutSeconds !== timeoutSeconds) {
+        log(`⚠️ Timeout too low; using minimum ${safeTimeoutSeconds}s.`, 'info');
     }
     
     // Reset rate limiter for new session
@@ -3242,7 +3254,7 @@ async function createEpub(overrideChapters = null) {
                         content = await withTimeout(
                             fetchChapterFast(chapter.url, config, { password, removeNotes }),
                             timeoutMs,
-                            `Timeout after ${timeoutSeconds}s`
+                            `Timeout after ${safeTimeoutSeconds}s`
                         );
                         content = cleanHtmlForEpub(content, removeIndent, imageMode);
                     } else {
@@ -3251,7 +3263,7 @@ async function createEpub(overrideChapters = null) {
                         const response = await withTimeout(
                             fetch(chapter.url, { credentials: 'include' }),
                             timeoutMs,
-                            `Timeout after ${timeoutSeconds}s`
+                            `Timeout after ${safeTimeoutSeconds}s`
                         );
                         if (response.status === 429) {
                             throw new Error('Rate limited (HTTP 429)');
