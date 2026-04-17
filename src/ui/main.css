@@ -71,149 +71,6 @@ body {
     }
 }
 
-@media (max-width: 900px) {
-    body {
-        padding-bottom: calc(72px + env(safe-area-inset-bottom));
-    }
-
-    .header {
-        padding: 14px 12px;
-    }
-
-    .header h1 {
-        font-size: 1.2rem;
-        margin-bottom: 2px;
-    }
-
-    .header p {
-        font-size: 0.78rem;
-    }
-
-    .main {
-        gap: 10px;
-        padding: 10px;
-    }
-
-    .panel {
-        gap: 10px;
-    }
-
-    .card {
-        padding: 14px;
-        border-radius: 10px;
-    }
-
-    .form-group input[type="text"],
-    .form-group input[type="url"],
-    .form-group input[type="password"],
-    .form-group input[type="number"],
-    .form-group select,
-    .btn {
-        min-height: 44px;
-    }
-
-    .btn {
-        padding: 10px 14px;
-    }
-
-    .novel-info {
-        flex-direction: column;
-        gap: 12px;
-    }
-
-    .novel-cover {
-        width: 120px;
-        height: 170px;
-        margin: 0 auto;
-    }
-
-    .novel-details h2,
-    .novel-author,
-    .novel-description,
-    .novel-stats {
-        text-align: center;
-    }
-
-    .chapters-card {
-        max-height: none;
-    }
-
-    .chapter-list {
-        max-height: 45vh;
-    }
-
-    .chapters-header {
-        gap: 8px;
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
-    .chapters-actions {
-        width: 100%;
-    }
-
-    .chapters-actions .btn {
-        flex: 1;
-    }
-
-    .chapter-item {
-        align-items: flex-start;
-        padding: 12px;
-    }
-
-    .chapter-item .chapter-title {
-        white-space: normal;
-        line-height: 1.3;
-    }
-
-    .speed-inputs {
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .panel-right .card:first-child {
-        position: sticky;
-        bottom: 8px;
-        z-index: 20;
-        box-shadow: 0 12px 24px var(--shadow);
-    }
-
-    .footer {
-        padding: 10px 12px;
-        font-size: 0.72rem;
-    }
-}
-
-@media (max-width: 600px) {
-    .input-row {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .input-row.compact {
-        flex-direction: row;
-        align-items: center;
-    }
-
-    .input-row.compact input[type="number"] {
-        width: 100%;
-        min-width: 0;
-    }
-
-    .supported-sites {
-        font-size: 0.66rem;
-    }
-
-    .log-actions {
-        flex-direction: column;
-    }
-
-    .donation-row {
-        flex-direction: column;
-        align-items: stretch;
-    }
-}
-
 .panel {
     display: flex;
     flex-direction: column;
@@ -259,8 +116,7 @@ body {
 .form-group input[type="text"],
 .form-group input[type="url"],
 .form-group input[type="password"],
-.form-group input[type="number"],
-.form-group select {
+.form-group input[type="number"] {
     width: 100%;
     padding: 10px 12px;
     background: var(--bg-secondary);
@@ -547,13 +403,6 @@ body {
     color: var(--text-muted);
 }
 
-.eta-text {
-    margin-top: 4px;
-    text-align: center;
-    font-size: 0.74rem;
-    color: var(--text-muted);
-}
-
 .progress-log {
     max-height: 200px;
     overflow-y: auto;
@@ -575,40 +424,6 @@ body {
 
 .progress-log .log-entry.error {
     color: var(--error);
-}
-
-.log-actions {
-    margin-top: 10px;
-    display: flex;
-    gap: 8px;
-}
-
-.log-actions .btn {
-    flex: 1;
-    font-size: 0.78rem;
-    padding: 8px 10px;
-}
-
-.donation-card {
-    background: linear-gradient(135deg, rgba(72, 187, 120, 0.12), rgba(22, 33, 62, 1));
-}
-
-.donation-copy {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    margin-bottom: 10px;
-}
-
-.donation-row input {
-    min-height: 42px;
-}
-
-.paypal-container {
-    margin-top: 10px;
-}
-
-.paypal-container:not(.hidden) {
-    display: block;
 }
 
 /* Footer */

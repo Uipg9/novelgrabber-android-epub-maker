@@ -1,6 +1,6 @@
 {
   "name": "novelgrabber-web-to-epub",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "Browser extension to convert web novels to EPUB with integrated decryption",
   "type": "module",
   "scripts": {

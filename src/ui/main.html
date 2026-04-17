@@ -106,39 +106,6 @@
                                 <span>🔒 Safe Mode (Sequential)</span>
                             </label>
                         </div>
-
-                        <div class="form-group option-item checkbox-item">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="dry-run">
-                                <span class="toggle-switch"></span>
-                                <span>🧪 Dry Run (No EPUB Build)</span>
-                            </label>
-                        </div>
-
-                        <div class="form-group option-item checkbox-item">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="diagnostics-mode">
-                                <span class="toggle-switch"></span>
-                                <span>🛠️ Diagnostics in Logs</span>
-                            </label>
-                        </div>
-
-                        <div class="form-group option-item checkbox-item">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="background-mode">
-                                <span class="toggle-switch"></span>
-                                <span>📱 Keep Running (Wake Lock)</span>
-                            </label>
-                        </div>
-
-                        <div class="form-group option-item">
-                            <label for="image-mode">🖼️ Image Mode</label>
-                            <select id="image-mode">
-                                <option value="original">Keep Original Images</option>
-                                <option value="skip-small">Skip Tiny Decorative Images</option>
-                                <option value="remove">No Images</option>
-                            </select>
-                        </div>
                         
                         <div class="form-group option-item speed-settings">
                             <label>⚡ Speed Settings</label>
@@ -198,9 +165,6 @@
                     <button id="btn-create" class="btn btn-primary btn-large" disabled>
                         📥 Create EPUB
                     </button>
-                    <button id="btn-retry-failed" class="btn btn-secondary btn-large hidden">
-                        🔁 Retry Failed Chapters
-                    </button>
                     <button id="btn-cancel" class="btn btn-secondary btn-large hidden">
                         ⏹️ Cancel
                     </button>
@@ -213,27 +177,11 @@
                             <div id="progress-bar" class="progress-bar"></div>
                         </div>
                         <p id="progress-text" class="progress-text">Ready</p>
-                        <p id="eta-text" class="eta-text">ETA: --</p>
                     </div>
                     <div id="progress-log" class="progress-log"></div>
-                    <div class="log-actions">
-                        <button id="btn-copy-log" class="btn btn-secondary btn-small">
-                            📋 Copy Log
-                        </button>
-                        <button id="btn-export-log" class="btn btn-secondary btn-small">
-                            💾 Export Log
-                        </button>
-                    </div>
-                </div>
-
-                <div class="card donation-card">
-                    <h3>💙 Support Development</h3>
-                    <p class="donation-copy">If this app helps you, you can support updates and maintenance.</p>
-                    <div class="input-row donation-row">
-                        <input type="number" id="donation-amount" min="1" step="1" placeholder="Amount (USD)">
-                        <button id="btn-donation-checkout" class="btn btn-secondary">Checkout</button>
-                    </div>
-                    <div id="paypal-donation-container" class="paypal-container hidden"></div>
+                    <button id="btn-copy-log" class="btn btn-secondary btn-small" style="margin-top: 8px; font-size: 12px; padding: 4px 12px;">
+                        📋 Copy Log
+                    </button>
                 </div>
 
                 <!-- Tools Section removed - decryptor doesn't work well with font-based encryption -->
@@ -242,7 +190,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-        <p>Novel to EPUB Creator v1.2.6 | Hard-fix EPUB mode | Supports ChrysanthemumGarden, NovelHall, NovelFull, RoyalRoad, AO3 & more</p>
+            <p>Novel to EPUB Creator v1.2.7 | Classic stable mode | Supports ChrysanthemumGarden, NovelHall, NovelFull, RoyalRoad, AO3 & more</p>
         </footer>
     </div>
 
