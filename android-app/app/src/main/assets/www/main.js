@@ -3131,6 +3131,9 @@ async function createEpub(overrideChapters = null) {
     const safeMode = els.safeMode?.checked ?? false;
     const parsedBatchSize = parseInt(els.batchSize?.value, 10);
     const customBatchSize = Number.isFinite(parsedBatchSize) ? parsedBatchSize : 5;
+    const parsedTimeoutSeconds = parseInt(els.timeoutSeconds?.value, 10);
+    const timeoutSeconds = Number.isFinite(parsedTimeoutSeconds) ? parsedTimeoutSeconds : 45;
+    const chapterTimeoutMs = Math.max(15000, timeoutSeconds * 1000);
 
     log(`Starting EPUB creation for ${selectedChapters.length} chapters`);
     if (config.hasEncryption) {
@@ -3142,6 +3145,7 @@ async function createEpub(overrideChapters = null) {
     if (password) {
         log(`Password provided for locked chapters`);
     }
+    log(`Chapter timeout: ${Math.round(chapterTimeoutMs / 1000)}s`);
 
     // ============ SAFE MODE / AUTO-SEQUENTIAL ============
     // If password is provided OR Safe Mode is checked, force sequential (1 thread)
@@ -3207,42 +3211,48 @@ async function createEpub(overrideChapters = null) {
                 log(`Fetching: ${chapter.title}`);
 
                 try {
-                    let content;
+                    const chapterResult = await withTimeout((async () => {
+                        let content;
 
-                    if (useFastFetch) {
-                        // FAST: Use fetch + DOMParser + cipher tables (no tabs!)
-                        content = await fetchChapterFast(chapter.url, config, { password, removeNotes });
-                        content = cleanHtmlForEpub(content, removeIndent);
-                    } else {
-                        // For normal (non-encrypted) sites, use direct fetch with rate limiting
-                        await rateLimiter.wait();
-                        const response = await fetch(chapter.url, { credentials: 'include' });
-                        if (response.status === 429) {
-                            throw new Error('Rate limited (HTTP 429)');
+                        if (useFastFetch) {
+                            // FAST: Use fetch + DOMParser + cipher tables (no tabs!)
+                            content = await fetchChapterFast(chapter.url, config, { password, removeNotes });
+                            content = cleanHtmlForEpub(content, removeIndent);
+                        } else {
+                            // For normal (non-encrypted) sites, use direct fetch with rate limiting
+                            await rateLimiter.wait();
+                            const response = await fetch(chapter.url, { credentials: 'include' });
+                            if (response.status === 429) {
+                                throw new Error('Rate limited (HTTP 429)');
+                            }
+                            const html = await response.text();
+                            const doc = new DOMParser().parseFromString(html, 'text/html');
+                            content = extractChapterContent(doc, config, removeIndent);
                         }
-                        const html = await response.text();
-                        const doc = new DOMParser().parseFromString(html, 'text/html');
-                        content = extractChapterContent(doc, config, removeIndent);
-                    }
+
+                        return {
+                            index: globalIndex,
+                            title: chapter.title,
+                            content,
+                            success: true
+                        };
+                    })(), chapterTimeoutMs, `Timeout after ${Math.round(chapterTimeoutMs / 1000)}s`);
 
                     log(`✓ ${chapter.title}`, 'success');
-
-                    return {
-                        index: globalIndex,
-                        title: chapter.title,
-                        content: content,
-                        success: true
-                    };
+                    return chapterResult;
                 } catch (error) {
                     const isQualityFail = error.message.includes('Quality check');
                     const isRateLimit = error.message.includes('429');
                     const isCloudflare = error.message.includes('403') || error.message.includes('503') || error.message.includes('Cloudflare');
                     const isPassword = error.message.includes('Password') || error.message.includes('password');
+                    const isTimeout = error.message.includes('Timeout');
 
                     if (isRateLimit) {
                         log(`⏳ Rate limited on: ${chapter.title} - max retries exceeded`, 'error');
                     } else if (isCloudflare) {
                         log(`🛡️ Cloudflare blocked: ${chapter.title} - max retries exceeded`, 'error');
+                    } else if (isTimeout) {
+                        log(`⏰ Timeout on: ${chapter.title}`, 'error');
                     } else if (isQualityFail) {
                         log(`⚠️ Quality check failed: ${chapter.title}`, 'error');
                     } else if (isPassword) {
@@ -3296,7 +3306,11 @@ async function createEpub(overrideChapters = null) {
             if (coverUrl) {
                 try {
                     log('Fetching cover image...');
-                    coverData = await fetchCoverImage(coverUrl);
+                    coverData = await withTimeout(
+                        fetchCoverImage(coverUrl),
+                        chapterTimeoutMs,
+                        `Cover timeout after ${Math.round(chapterTimeoutMs / 1000)}s`
+                    );
                     if (coverData) {
                         log('✓ Cover image loaded', 'success');
                     }
