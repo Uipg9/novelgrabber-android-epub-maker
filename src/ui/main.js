@@ -3129,17 +3129,10 @@ async function createEpub(overrideChapters = null) {
     const password = els.password?.value?.trim() || '';
     const turboMode = els.turboMode?.checked ?? false;
     const safeMode = els.safeMode?.checked ?? false;
-    const dryRun = els.dryRun?.checked ?? false;
-    const diagnosticsMode = els.diagnosticsMode?.checked ?? false;
-    const backgroundMode = els.backgroundMode?.checked ?? false;
     const includeImages = els.includeImages?.checked ?? true;
     let imageMode = els.imageMode?.value || 'original';
     if (!includeImages) imageMode = 'remove';
-    const parsedBatchSize = parseInt(els.batchSize?.value, 10);
-    const customBatchSize = Number.isFinite(parsedBatchSize) ? parsedBatchSize : 5;
-    const parsedTimeoutSeconds = parseInt(els.timeoutSeconds?.value, 10);
-    const timeoutSeconds = Number.isFinite(parsedTimeoutSeconds) ? parsedTimeoutSeconds : 60;
-    state.diagnosticsEnabled = diagnosticsMode;
+    const customBatchSize = parseInt(els.batchSize?.value) || 5;
 
     log(`Starting EPUB creation for ${selectedChapters.length} chapters`);
     if (config.hasEncryption) {
@@ -3151,33 +3144,12 @@ async function createEpub(overrideChapters = null) {
     if (password) {
         log(`Password provided for locked chapters`);
     }
-    if (dryRun) {
-        const preview = selectedChapters.slice(0, 8).map(ch => `- ${ch.title}`).join('\n');
-        log('🧪 Dry run enabled: no chapter downloads or EPUB build will occur.', 'success');
-        log(`Would process ${selectedChapters.length} chapters.`, 'success');
-        if (preview) {
-            log(`Preview:\n${preview}`);
-        }
-        updateProgress(100, 'Dry run complete');
-        if (els.etaText) els.etaText.textContent = 'ETA: 0s';
-        state.isRunning = false;
-        els.btnCreate.classList.remove('hidden');
-        els.btnCancel.classList.add('hidden');
-        return;
-    }
 
-    if (backgroundMode) {
-        // Run in background without blocking EPUB start.
-        requestNotificationPermission().catch(() => {});
-        acquireWakeLock().catch(() => {});
-        log('📱 Background mode enabled (non-blocking setup)');
-    }
-    
     // ============ SAFE MODE / AUTO-SEQUENTIAL ============
     // If password is provided OR Safe Mode is checked, force sequential (1 thread)
     // This prevents race conditions where parallel requests fail before cookie is saved
     const forceSequential = safeMode || (password && password.length > 0);
-    
+
     // Concurrency settings - SAFE defaults to avoid rate limiting
     // Even with fast fetch, we throttle to avoid HTTP 429 bans
     // Default: 15 parallel, Turbo: 25 parallel (with built-in rate limiting)
@@ -3190,38 +3162,24 @@ async function createEpub(overrideChapters = null) {
         BATCH_SIZE = 25;
         log(`🚀 TURBO MODE: 25 parallel + auto rate limiting`, 'success');
     } else {
-        BATCH_SIZE = Math.max(1, Math.min(customBatchSize, 15));
+        BATCH_SIZE = Math.min(customBatchSize, 15);
         log(`⚡ Speed: ${BATCH_SIZE} parallel requests (with rate limiting)`);
     }
 
-    if (BATCH_SIZE <= 0 || !Number.isFinite(BATCH_SIZE)) {
-        BATCH_SIZE = 1;
-        log('⚠️ Invalid batch size detected; forcing 1 thread for stability.', 'error');
-    }
-
-    const safeTimeoutSeconds = Math.max(10, timeoutSeconds);
-    const timeoutMs = safeTimeoutSeconds * 1000;
-    if (safeTimeoutSeconds !== timeoutSeconds) {
-        log(`⚠️ Timeout too low; using minimum ${safeTimeoutSeconds}s.`, 'info');
-    }
-    
     // Reset rate limiter for new session
     rateLimiter.lastRequestTime = 0;
-    
+
     updateProgress(0, 'Starting...');
-    if (els.etaText) els.etaText.textContent = 'ETA: calculating...';
+    if (els.etaText) els.etaText.textContent = 'ETA: --';
 
     const collectedChapters = [];
     const failedChapters = [];
-    let processedCount = 0;
-    let successCount = 0;
-    let failureCount = 0;
-    
+
     // Use fast fetch for encrypted sites (CG) - handles passwords via fetch too!
     // Only fall back to tabs if fast fetch actually fails
     const useFastFetch = config.hasEncryption;
     const startTime = Date.now();
-    
+
     if (useFastFetch) {
         log(`📡 Using FAST FETCH mode (no tabs)`);
     }
@@ -3233,38 +3191,29 @@ async function createEpub(overrideChapters = null) {
                 log('Cancelled by user', 'error');
                 break;
             }
-            
+
             const batchEnd = Math.min(batchStart + BATCH_SIZE, selectedChapters.length);
             const batch = selectedChapters.slice(batchStart, batchEnd);
-            
+
             const percent = Math.round((batchStart / selectedChapters.length) * 100);
             updateProgress(percent, `Downloading ${batchStart + 1}-${batchEnd}/${selectedChapters.length}`);
-            
+
             // Process batch in parallel
             const batchPromises = batch.map(async (chapter, batchIndex) => {
                 const globalIndex = batchStart + batchIndex;
                 log(`Fetching: ${chapter.title}`);
-                
+
                 try {
                     let content;
-                    const chapterStart = Date.now();
-                    
+
                     if (useFastFetch) {
                         // FAST: Use fetch + DOMParser + cipher tables (no tabs!)
-                        content = await withTimeout(
-                            fetchChapterFast(chapter.url, config, { password, removeNotes }),
-                            timeoutMs,
-                            `Timeout after ${safeTimeoutSeconds}s`
-                        );
+                        content = await fetchChapterFast(chapter.url, config, { password, removeNotes });
                         content = cleanHtmlForEpub(content, removeIndent, imageMode);
                     } else {
                         // For normal (non-encrypted) sites, use direct fetch with rate limiting
                         await rateLimiter.wait();
-                        const response = await withTimeout(
-                            fetch(chapter.url, { credentials: 'include' }),
-                            timeoutMs,
-                            `Timeout after ${safeTimeoutSeconds}s`
-                        );
+                        const response = await fetch(chapter.url, { credentials: 'include' });
                         if (response.status === 429) {
                             throw new Error('Rate limited (HTTP 429)');
                         }
@@ -3272,26 +3221,21 @@ async function createEpub(overrideChapters = null) {
                         const doc = new DOMParser().parseFromString(html, 'text/html');
                         content = extractChapterContent(doc, config, removeIndent, imageMode);
                     }
-                    
+
                     log(`✓ ${chapter.title}`, 'success');
-                    const durationMs = Date.now() - chapterStart;
-                    if (diagnosticsMode) {
-                        log(`⏱️ ${chapter.title} fetched in ${(durationMs / 1000).toFixed(2)}s`);
-                    }
-                    
+
                     return {
                         index: globalIndex,
                         title: chapter.title,
                         content: content,
-                        success: true,
-                        durationMs
+                        success: true
                     };
                 } catch (error) {
                     const isQualityFail = error.message.includes('Quality check');
                     const isRateLimit = error.message.includes('429');
                     const isCloudflare = error.message.includes('403') || error.message.includes('503') || error.message.includes('Cloudflare');
                     const isPassword = error.message.includes('Password') || error.message.includes('password');
-                    
+
                     if (isRateLimit) {
                         log(`⏳ Rate limited on: ${chapter.title} - max retries exceeded`, 'error');
                     } else if (isCloudflare) {
@@ -3303,62 +3247,49 @@ async function createEpub(overrideChapters = null) {
                     } else {
                         log(`✗ Failed: ${chapter.title} - ${error.message}`, 'error');
                     }
-                    
+
                     // STRICT HEADLESS: No tab fallback - chapter simply fails
                     // This keeps the download fast and doesn't open unwanted tabs
                     return {
                         index: globalIndex,
                         title: chapter.title,
                         chapter,
-                        success: false,
-                        errorMessage: error.message || 'Unknown error'
+                        success: false
                     };
                 }
             });
-            
+
             // Wait for batch to complete
             const batchResults = await Promise.all(batchPromises);
-            
+
             // Add successful chapters to collection (maintaining order)
             batchResults.forEach(result => {
                 if (result.success) {
                     collectedChapters.push(result);
-                    successCount++;
                 } else {
                     failedChapters.push(result.chapter || selectedChapters[result.index]);
-                    failureCount++;
                 }
             });
 
-            processedCount += batchResults.length;
-
-            const elapsedMs = Date.now() - startTime;
-            const chaptersPerSecond = processedCount > 0 ? processedCount / Math.max(elapsedMs / 1000, 1) : 0;
-            const remaining = Math.max(selectedChapters.length - processedCount, 0);
-            const etaSeconds = chaptersPerSecond > 0 ? remaining / chaptersPerSecond : 0;
-            if (els.etaText) {
-                els.etaText.textContent = `ETA: ${remaining > 0 ? formatDuration(etaSeconds) : '0s'} | ${chaptersPerSecond.toFixed(2)} ch/s`;
-            }
-            
             // Small delay between batches for safety
             if (batchEnd < selectedChapters.length) {
                 const batchDelay = delay > 0 ? delay : 200; // Minimum 200ms between batches
                 await sleep(batchDelay);
             }
         }
-        
+
         // Sort chapters by original index to maintain order
         collectedChapters.sort((a, b) => a.index - b.index);
-        
+
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
         if (!state.cancelled && collectedChapters.length > 0) {
             updateProgress(90, 'Fetching cover image...');
-            
+
             // Try to get cover image
             let coverData = null;
             const coverUrl = els.coverUrl?.value?.trim() || state.novelInfo.cover;
-            
+
             if (coverUrl) {
                 try {
                     log('Fetching cover image...');
@@ -3370,40 +3301,25 @@ async function createEpub(overrideChapters = null) {
                     log(`Could not load cover: ${e.message}`, 'error');
                 }
             }
-            
+
             updateProgress(95, 'Building EPUB...');
             log('Building EPUB file...');
 
             const epub = buildEpub(state.novelInfo, collectedChapters, removeIndent, coverData);
-            
+
             updateProgress(100, 'Complete!');
             log(`EPUB created successfully! (${collectedChapters.length} chapters in ${elapsed}s)`, 'success');
 
             const filename = sanitizeFilename(state.novelInfo.title || 'novel') + '.epub';
             await downloadBlob(epub, filename);
             log(`Downloaded: ${filename}`, 'success');
-            await notifyUser('EPUB Complete', `Finished ${collectedChapters.length} chapters.`);
-        } else if (!state.cancelled && collectedChapters.length === 0) {
-            await notifyUser('EPUB Failed', 'No chapters were collected. Check logs.');
         }
 
     } catch (error) {
         log(`Fatal error: ${error.message}`, 'error');
         console.error('EPUB creation error:', error);
-        await notifyUser('EPUB Error', error.message || 'Unexpected error occurred.');
     } finally {
-        const total = selectedChapters.length;
-        const summaryElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        log('──────── Run Summary ────────');
-        log(`Total: ${total} | Success: ${successCount} | Failed: ${failureCount} | Time: ${summaryElapsed}s`);
-        if (failureCount > 0) {
-            const failedNames = failedChapters.slice(0, 10).map(ch => ch?.title || 'Unknown chapter').join(', ');
-            log(`Failed chapters: ${failedNames}${failureCount > 10 ? ' ...' : ''}`, 'error');
-        }
-        log('─────────────────────────────');
-
         state.lastFailedChapters = failedChapters;
-        state.lastRunSummary = { total, successCount, failureCount, summaryElapsed };
         if (els.btnRetryFailed) {
             if (failedChapters.length > 0) {
                 els.btnRetryFailed.classList.remove('hidden');
@@ -3411,12 +3327,6 @@ async function createEpub(overrideChapters = null) {
                 els.btnRetryFailed.classList.add('hidden');
             }
         }
-
-        if (state.cancelled && failureCount > 0) {
-            await notifyUser('EPUB Cancelled', `${failureCount} chapter(s) failed before cancellation.`);
-        }
-
-        await releaseWakeLock();
         state.isRunning = false;
         els.btnCreate.classList.remove('hidden');
         els.btnCancel.classList.add('hidden');
