@@ -370,6 +370,9 @@ const els = {
     progressBar: document.getElementById('progress-bar'),
     progressText: document.getElementById('progress-text'),
     progressLog: document.getElementById('progress-log'),
+    donationAmount: document.getElementById('donation-amount'),
+    btnDonationCheckout: document.getElementById('btn-donation-checkout'),
+    paypalDonationContainer: document.getElementById('paypal-donation-container'),
     btnDecryptEpub: document.getElementById('btn-decrypt-epub'),
     epubFileInput: document.getElementById('epub-file-input')
 };
@@ -440,6 +443,12 @@ async function init() {
     if (btnCopyLog) {
         btnCopyLog.addEventListener('click', copyLogToClipboard);
     }
+
+    if (els.btnDonationCheckout) {
+        els.btnDonationCheckout.addEventListener('click', renderDonationCheckout);
+    }
+
+    initializePayPalIfPresent();
 }
 
 // Get site config based on URL
@@ -845,6 +854,107 @@ function copyLogToClipboard() {
         console.error('Failed to copy log:', err);
         alert('Failed to copy log to clipboard');
     });
+}
+
+function initializePayPalIfPresent() {
+    if (!els.paypalDonationContainer) return;
+    // SDK is loaded on demand in renderDonationCheckout.
+}
+
+const PAYPAL_CLIENT_ID = 'AQ6VbxVVRMac4X-DmMzYgdX24TFuf97sipJD8M57JwhVbj8I4RXL0roChvRo7Qke8cHYr3dkfhCEO0wD';
+
+function isExtensionContext() {
+    return /^(chrome|edge)-extension:$/.test(window.location.protocol);
+}
+
+async function ensurePayPalSdkLoaded() {
+    if (window.paypal?.Buttons) {
+        return true;
+    }
+
+    // Extension pages usually block remote script execution by CSP.
+    if (isExtensionContext()) {
+        return false;
+    }
+
+    const existing = document.querySelector('script[data-paypal-sdk="true"]');
+    if (existing) {
+        return await new Promise(resolve => {
+            if (window.paypal?.Buttons) return resolve(true);
+            existing.addEventListener('load', () => resolve(!!window.paypal?.Buttons), { once: true });
+            existing.addEventListener('error', () => resolve(false), { once: true });
+            setTimeout(() => resolve(!!window.paypal?.Buttons), 5000);
+        });
+    }
+
+    return await new Promise(resolve => {
+        const script = document.createElement('script');
+        script.src = `https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD&intent=capture`;
+        script.async = true;
+        script.dataset.paypalSdk = 'true';
+        script.onload = () => resolve(!!window.paypal?.Buttons);
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
+    });
+}
+
+function showPayPalFallbackMessage(amount) {
+    const message = isExtensionContext()
+        ? `PayPal checkout is blocked by browser extension security policy.\n\nUse the Android app build for direct checkout, or open this page outside extension context.\n\nAmount entered: $${amount.toFixed(2)}`
+        : `PayPal checkout is unavailable right now. Please try again later.\n\nAmount entered: $${amount.toFixed(2)}`;
+    alert(message);
+}
+
+async function renderDonationCheckout() {
+    const amount = parseFloat(els.donationAmount?.value || '0');
+    if (!Number.isFinite(amount) || amount <= 0) {
+        alert('Please enter a valid donation amount.');
+        return;
+    }
+
+    if (!els.paypalDonationContainer) {
+        return;
+    }
+
+    const sdkReady = await ensurePayPalSdkLoaded();
+    if (!sdkReady) {
+        showPayPalFallbackMessage(amount);
+        return;
+    }
+
+    const container = els.paypalDonationContainer;
+    container.classList.remove('hidden');
+    container.innerHTML = '';
+
+    window.paypal.Buttons({
+        style: {
+            layout: 'vertical',
+            color: 'gold',
+            shape: 'rect',
+            label: 'paypal'
+        },
+        createOrder: (_, actions) => {
+            return actions.order.create({
+                purchase_units: [{
+                    amount: {
+                        currency_code: 'USD',
+                        value: amount.toFixed(2)
+                    },
+                    description: 'Support donation for NovelGrabber'
+                }]
+            });
+        },
+        onApprove: async (_, actions) => {
+            await actions.order.capture();
+            log(`Donation completed: $${amount.toFixed(2)}`, 'success');
+            alert('Thank you for supporting development!');
+        },
+        onError: (err) => {
+            console.error('PayPal checkout error:', err);
+            log(`PayPal checkout error: ${err?.message || 'Unknown error'}`, 'error');
+            alert('PayPal checkout failed. Please try again.');
+        }
+    }).render(container);
 }
 
 // ============ LOG HISTORY FOR COPY BUTTON ============

@@ -184,13 +184,23 @@
                     </button>
                 </div>
 
+                <div class="card donation-card">
+                    <h3>Support Development</h3>
+                    <p class="donation-copy">If this app helps you, you can support updates and maintenance.</p>
+                    <div class="input-row donation-row">
+                        <input type="number" id="donation-amount" min="1" step="1" placeholder="Amount (USD)">
+                        <button id="btn-donation-checkout" class="btn btn-secondary">PayPal Checkout</button>
+                    </div>
+                    <div id="paypal-donation-container" class="paypal-container hidden"></div>
+                </div>
+
                 <!-- Tools Section removed - decryptor doesn't work well with font-based encryption -->
             </section>
         </main>
 
         <!-- Footer -->
         <footer class="footer">
-            <p>Novel to EPUB Creator v1.2.7 | Classic stable mode | Supports ChrysanthemumGarden, NovelHall, NovelFull, RoyalRoad, AO3 & more</p>
+            <p>Novel to EPUB Creator v1.2.8 | Classic stable mode | Supports ChrysanthemumGarden, NovelHall, NovelFull, RoyalRoad, AO3 & more</p>
         </footer>
     </div>
 

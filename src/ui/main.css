@@ -426,6 +426,28 @@ body {
     color: var(--error);
 }
 
+.donation-card {
+    background: linear-gradient(135deg, rgba(72, 187, 120, 0.12), rgba(22, 33, 62, 1));
+}
+
+.donation-copy {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-bottom: 10px;
+}
+
+.donation-row input {
+    min-height: 42px;
+}
+
+.paypal-container {
+    margin-top: 10px;
+}
+
+.paypal-container:not(.hidden) {
+    display: block;
+}
+
 /* Footer */
 .footer {
     padding: 16px;
