@@ -1330,7 +1330,7 @@ async function parseFontCmap(fontUrl, baseUrl) {
         }
         
         const buffer = await response.arrayBuffer();
-        const cipherKey = parseWoffCmap(buffer);
+        const cipherKey = await parseWoffCmap(buffer);
         
         if (cipherKey) {
             console.log(`[Font Parser] Generated cipher key: ${cipherKey.substring(0, 20)}...`);
@@ -1344,53 +1344,78 @@ async function parseFontCmap(fontUrl, baseUrl) {
     }
 }
 
+// Decompress a zlib-compressed slice of an ArrayBuffer using DecompressionStream
+async function decompressZlib(buffer, byteOffset, byteLength) {
+    const compressed = new Uint8Array(buffer, byteOffset, byteLength);
+    const ds = new DecompressionStream('deflate');
+    const writer = ds.writable.getWriter();
+    const reader = ds.readable.getReader();
+    writer.write(compressed);
+    writer.close();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        total += value.length;
+    }
+    const out = new Uint8Array(total);
+    let pos = 0;
+    for (const c of chunks) { out.set(c, pos); pos += c.length; }
+    return out.buffer;
+}
+
 // Parse WOFF/WOFF2 cmap table to extract character mapping
-function parseWoffCmap(buffer) {
+async function parseWoffCmap(buffer) {
     try {
         const data = new DataView(buffer);
         const STANDARD = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        
-        // Check for WOFF signature
+
         const signature = data.getUint32(0, false);
         let offset = 0;
-        
+
         if (signature === 0x774F4646) { // 'wOFF'
-            // WOFF format - find cmap table
             const numTables = data.getUint16(12, false);
             offset = 44;
-            
+
             for (let i = 0; i < numTables; i++) {
                 const tag = String.fromCharCode(
                     data.getUint8(offset), data.getUint8(offset + 1),
                     data.getUint8(offset + 2), data.getUint8(offset + 3)
                 );
-                
+
                 if (tag === 'cmap') {
                     const tableOffset = data.getUint32(offset + 4, false);
                     const compLength = data.getUint32(offset + 8, false);
                     const origLength = data.getUint32(offset + 12, false);
-                    
-                    // If compressed, we'd need to decompress - skip for now
+
                     if (compLength !== origLength) {
-                        console.log('[Font Parser] Compressed cmap - needs decompression');
-                        return null;
+                        // Decompress zlib-compressed cmap table
+                        try {
+                            const decompressed = await decompressZlib(buffer, tableOffset, compLength);
+                            const decompView = new DataView(decompressed);
+                            return extractCmapMapping(decompView, 0, STANDARD);
+                        } catch (e) {
+                            console.warn('[Font Parser] Decompression failed:', e);
+                            return null;
+                        }
                     }
-                    
+
                     return extractCmapMapping(data, tableOffset, STANDARD);
                 }
                 offset += 20;
             }
         } else if (signature === 0x00010000 || signature === 0x4F54544F) { // TrueType or 'OTTO'
-            // Regular TTF/OTF format
             const numTables = data.getUint16(4, false);
             offset = 12;
-            
+
             for (let i = 0; i < numTables; i++) {
                 const tag = String.fromCharCode(
                     data.getUint8(offset), data.getUint8(offset + 1),
                     data.getUint8(offset + 2), data.getUint8(offset + 3)
                 );
-                
+
                 if (tag === 'cmap') {
                     const tableOffset = data.getUint32(offset + 8, false);
                     return extractCmapMapping(data, tableOffset, STANDARD);
@@ -1398,7 +1423,7 @@ function parseWoffCmap(buffer) {
                 offset += 16;
             }
         }
-        
+
         console.log('[Font Parser] Unknown font format');
         return null;
     } catch (error) {
@@ -2047,9 +2072,149 @@ async function extractAndDecryptContentWithDynamicCipher(doc, html, baseUrl, con
         const stillUnmatched = [...unmatchedFonts].filter(f => !dynamicCipherCache.has(f));
         if (stillUnmatched.length > 0) {
             console.warn(`[Dynamic Cipher] WARNING: ${stillUnmatched.length} fonts still have no cipher: ${stillUnmatched.join(', ')}`);
+
+            // Leave undecoded paragraphs as-is (raw text may be partially scrambled but still readable)
         }
     }
     
+    // STATIC CIPHER FALLBACK: CG uses a set of monoalphabetic substitution ciphers,
+    // one per paragraph, identifiable by recognizing how common English words are encoded.
+    // Each entry: fingerprint words (what those plain words look like scrambled) → decode map.
+    // Unknown chars pass through unchanged.
+    const CG_CIPHER_LIST = [
+        { // Cipher A  (the=pCv)
+            fp: ['pCv','pCv'],
+            map: {b:'f',c:'d',e:'k',f:'p',g:'l',h:'m',i:'y',j:'i',k:'s',m:'c',o:'l',
+                  p:'t',r:'i',t:'a',v:'e',w:'g',x:'u',
+                  A:'n',B:'p',C:'h',E:'T',G:'w',K:'o',P:'o',Q:'s',R:'v',U:'y',X:'b',Y:'r'}
+        },
+        { // Cipher B  (the=AOt)
+            fp: ['AOt','iOt','SGD'],
+            map: {b:'l',c:'q',d:'u',e:'q',i:'t',o:'m',p:'c',s:'b',t:'e',v:'i',w:'j',y:'d',z:'g',
+                  A:'t',B:'d',C:'o',D:'s',G:'a',H:'p',J:'z',K:'x',M:'f',O:'h',P:'n',
+                  Q:'b',R:'v',S:'w',T:'h',W:'r',X:'k',Y:'y',Z:'f'}
+        },
+        { // Cipher 3  (the=mVg)
+            fp: ['mVg','pLc','oVg'],
+            map: {c:'n',e:'l',g:'e',i:'o',l:'a',m:'t',n:'x',o:'t',p:'l',r:'n',s:'p',
+                  v:'y',w:'i',x:'f',y:'d',z:'f',
+                  A:'q',B:'v',C:'w',D:'b',G:'j',I:'u',J:'m',K:'h',L:'i',M:'k',
+                  N:'r',T:'c',U:'s',V:'h',W:'s',X:'y',Y:'g'}
+        },
+        { // Cipher D  (the=rxD)
+            fp: ['rxD','cxD','NfF'],
+            map: {a:'f',c:'t',e:'f',f:'i',j:'p',k:'x',m:'c',p:'i',r:'t',s:'o',t:'q',x:'h',y:'l',z:'d',
+                  A:'a',B:'v',D:'e',E:'h',F:'n',G:'o',I:'u',J:'g',K:'k',M:'w',N:'l',
+                  O:'m',P:'u',R:'y',S:'r',T:'a',U:'s',W:'q',Y:'b'}
+        },
+        { // Cipher E  (the=dIT)
+            fp: ['dIT','nQJ','KLW'],
+            map: {a:'v',c:'x',d:'t',f:'o',g:'b',i:'r',m:'w',o:'w',p:'y',q:'p',r:'a',s:'k',y:'q',
+                  A:'s',B:'d',E:'T',G:'c',H:'f',I:'h',J:'n',K:'h',L:'a',N:'g',O:'r',
+                  P:'m',Q:'i',S:'f',T:'e',U:'u',W:'i',Y:'l'}
+        },
+        { // Cipher F  (the=qBY)
+            fp: ['qBY','vlg','SlX'],
+            map: {c:'m',d:'a',e:'g',g:'n',h:'b',i:'b',j:'y',l:'i',o:'v',p:'u',q:'t',u:'p',v:'l',w:'x',x:'r',
+                  A:'f',B:'h',C:'z',D:'w',E:'j',J:'l',L:'f',P:'t',Q:'w',S:'h',
+                  T:'o',V:'c',W:'k',X:'s',Y:'e',Z:'d'}
+        },
+        { // Cipher G  (the=qnR) — ch1 hospital paragraphs
+            fp: ['qnR','ePT','BFH','FKp','Plp','POO'],
+            map: {a:'v',b:'B',d:'i',e:'y',h:'r',l:'l',n:'h',p:'d',q:'t',s:'Q',x:'j',y:'g',c:'I',
+                  A:'c',B:'w',E:'D',F:'a',H:'s',K:'n',L:'b',N:'p',O:'f',P:'o',Q:'W',R:'e',T:'u',Y:'F',Z:'m'}
+        },
+        { // Cipher H  (the=OoX) — ch1 old-man-glaring paragraph
+            fp: ['OoX','oCd','Juz','QUd','uWm'],
+            map: {a:'L',d:'s',f:'x',j:'b',m:'d',o:'h',p:'c',r:'u',t:'g',u:'o',w:'n',y:'m',z:'r',
+                  A:'H',C:'i',E:'j',H:'t',J:'f',O:'T',Q:'w',R:'Q',U:'a',V:'k',W:'l',X:'e',Y:'F'}
+        },
+        { // Cipher I  (the=vLJ) — ch1 "This old b*stard" + psychologists + little old man
+            fp: ['vLJ','ejo','jIf','EsJ','EII'],
+            map: {a:'q',e:'y',f:'d',j:'o',k:'t',n:'m',o:'u',s:'r',v:'T',z:'i',
+                  C:'p',E:'a',F:'n',I:'l',J:'e',K:'c',L:'h',N:'s',O:'Y',P:'g',U:'I',Z:'k'}
+        },
+    ];
+
+    // Build fingerprint → map lookup once
+    const CG_FINGERPRINT_MAP = new Map();
+    for (const cipher of CG_CIPHER_LIST) {
+        for (const fp of cipher.fp) { CG_FINGERPRINT_MAP.set(fp, cipher.map); }
+    }
+
+    function decryptWithStaticCipher(text, cipherMap) {
+        let result = '';
+        for (const c of text) { result += cipherMap[c] !== undefined ? cipherMap[c] : c; }
+        return result;
+    }
+
+    // Common English words used for scoring cipher attempts (brute-force fallback)
+    const COMMON_WORDS = new Set([
+        'the','and','was','his','her','she','for','are','but','not','you','all',
+        'had','they','with','have','from','this','that','been','were','said','him',
+        'its','one','who','did','get','has','him','out','two','way','what',
+        'old','man','she','saw','can','our','him','her','yes','day','how',
+        'Lin','Qin','Lin','old','the','his','her','was','not','but','and'
+    ]);
+
+    function detectCGCipher(text) {
+        const words = text.split(/\s+/);
+        // First pass: fingerprint lookup (fast)
+        for (const w of words) {
+            const s = w.replace(/[^a-zA-Z]/g, '');
+            if (s.length >= 2 && s.length <= 6 && CG_FINGERPRINT_MAP.has(s)) return CG_FINGERPRINT_MAP.get(s);
+        }
+        return null;
+    }
+
+    function scoreCipher(text, cipherMap) {
+        // Score by counting decoded common English words
+        const decoded = decryptWithStaticCipher(text, cipherMap);
+        const words = decoded.split(/\s+/);
+        let score = 0;
+        for (const w of words) {
+            const s = w.replace(/[^a-zA-Z]/g, '').toLowerCase();
+            if (s.length >= 2 && COMMON_WORDS.has(s)) score++;
+            // Bonus: letter frequency (high e/t/a/o/i/n ratio is good English)
+            for (const c of s) { if ('etaoinshrdlu'.includes(c)) score += 0.1; }
+        }
+        return score;
+    }
+
+    function detectCGCipherBruteForce(text) {
+        // Try all known ciphers and pick the one that produces the most English words
+        let best = null, bestScore = -1;
+        for (const cipher of CG_CIPHER_LIST) {
+            const score = scoreCipher(text, cipher.map);
+            if (score > bestScore) { bestScore = score; best = cipher.map; }
+        }
+        // Only return a result if score is convincingly above zero
+        return bestScore >= 2 ? best : null;
+    }
+
+    // Group all remaining cipher spans by their nearest block ancestor
+    const allFontSpans = [...clone.querySelectorAll('span[style*="font-family"]')];
+    if (allFontSpans.length > 0) {
+        const blockMap = new Map();
+        for (const span of allFontSpans) {
+            const block = span.closest('p, div, li, blockquote') || span.parentElement;
+            if (!blockMap.has(block)) blockMap.set(block, []);
+            blockMap.get(block).push(span);
+        }
+
+        blockMap.forEach((spans, block) => {
+            const blockText = block.textContent;
+            // Try fingerprint first, fall back to brute-force scoring
+            const cipherMap = detectCGCipher(blockText) || detectCGCipherBruteForce(blockText);
+            if (!cipherMap) return;
+            for (const span of spans) {
+                span.textContent = decryptWithStaticCipher(span.textContent, cipherMap);
+                span.removeAttribute('style');
+            }
+            decryptCount += spans.length;
+        });
+    }
+
     // Also handle .jum class (legacy CG cipher)
     clone.querySelectorAll('.jum, span.jum').forEach(el => {
         const jumCipher = CIPHER_DATA.find(c => c.selector === 'span.jum');
