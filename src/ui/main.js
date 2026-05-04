@@ -964,24 +964,20 @@ const logHistory = [];
 // Prevents IP bans and handles HTTP 429 errors gracefully
 
 const rateLimiter = {
-    lastRequestTime: 0,
-    minDelay: 100,      // Minimum 100ms between requests
-    maxDelay: 300,      // Maximum 300ms jitter
-    retryDelay: 5000,   // 5 second pause on 429
-    maxRetries: 3,      // Max retries per request
-    
-    // Add random jitter to behave more human-like
-    async wait() {
-        const now = Date.now();
-        const elapsed = now - this.lastRequestTime;
-        const jitter = Math.random() * (this.maxDelay - this.minDelay) + this.minDelay;
-        
-        if (elapsed < jitter) {
-            await new Promise(r => setTimeout(r, jitter - elapsed));
-        }
-        this.lastRequestTime = Date.now();
+    _queue: Promise.resolve(),
+    minDelay: 800,
+    maxDelay: 1400,
+    retryDelay: 5000,
+    maxRetries: 3,
+
+    // Mutex-based wait: chains onto the previous call so parallel callers serialize
+    wait() {
+        this._queue = this._queue.then(() =>
+            new Promise(r => setTimeout(r, this.minDelay + Math.random() * (this.maxDelay - this.minDelay)))
+        );
+        return this._queue;
     },
-    
+
     // Handle rate limiting with exponential backoff
     async handleRateLimit(retryCount) {
         const delay = this.retryDelay * Math.pow(2, retryCount);
@@ -989,6 +985,8 @@ const rateLimiter = {
         await new Promise(r => setTimeout(r, delay));
     }
 };
+
+let _tabScriptingQueue = Promise.resolve();
 
 // ============ QUALITY CHECK HEURISTICS ============
 // Detects garbage text that wasn't properly decrypted
@@ -1853,13 +1851,14 @@ async function fetchChapterFast(url, config, options = {}) {
 
             console.log(`[Fast Fetch] Using tab proxy (tab ${tab.id}): ${tab.url}`);
 
-            const results = await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                func: injectedFetchFunction,
-                args: [url, password],
-                world: 'MAIN'  // CRITICAL: Run in page context, not isolated world
-            });
-            result = results?.[0]?.result;
+            result = await (_tabScriptingQueue = _tabScriptingQueue.then(() =>
+                chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: injectedFetchFunction,
+                    args: [url, password],
+                    world: 'MAIN'
+                })
+            ).then(results => results?.[0]?.result));
         } else {
             // Mobile WebView / plain browser context: run fetch directly without chrome APIs.
             console.log('[Fast Fetch] Running direct headless fetch (non-extension context)');
@@ -3120,7 +3119,7 @@ async function createEpub() {
     }
     
     // Reset rate limiter for new session
-    rateLimiter.lastRequestTime = 0;
+    rateLimiter._queue = Promise.resolve();
     
     updateProgress(0, 'Starting...');
 
