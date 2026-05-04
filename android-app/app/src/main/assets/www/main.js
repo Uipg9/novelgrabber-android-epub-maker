@@ -1037,9 +1037,9 @@ function checkContentQuality(text) {
         }
     }
     
-    // If more than 5% of words are garbage, quality is poor
+    // If more than 40% of words are garbage, quality is poor (raised from 5% to allow partial CG decryption)
     const garbageRatio = totalWords > 0 ? garbageCount / totalWords : 0;
-    const hasTooMuchGarbage = garbageRatio > 0.05;
+    const hasTooMuchGarbage = garbageRatio > 0.40;
     
     // Check for readable content - lowered threshold to 3% for fantasy novels
     // Many Xianxia terms have fewer vowels than typical English
